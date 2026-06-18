@@ -1,0 +1,71 @@
+# Quant stack: TimescaleDB + the quant CLI container.
+#
+#   docker compose up -d timescaledb          # bring up the database
+#   docker compose run --rm quant download SPY --start 2020-01-01
+#   docker compose run --rm quant backtest SPY --strategy momentum
+#   docker compose --profile live up scheduler # start the daily (paper, dry-run) loop
+#
+# The `quant`/`scheduler` services use STORAGE_BACKEND=timescale and talk to the
+# `timescaledb` service over the compose network. Alpaca keys come from your
+# shell env (or a .env file in this directory) — never baked into the image.
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: quant
+      POSTGRES_DB: quant
+    ports:
+      - "5432:5432"
+    volumes:
+      - tsdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant -d quant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot CLI runner. Use `docker compose run --rm quant <args>`.
+  quant:
+    build: .
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      STORAGE_BACKEND: timescale
+      TIMESCALE_DSN: postgresql://quant:quant@timescaledb:5432/quant
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ALPACA_PAPER: ${ALPACA_PAPER:-true}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    command: ["info"]
+
+  # Always-on daily scheduler. Opt-in via the "live" profile so a plain
+  # `docker compose up` never starts it. DRY-RUN by default (no --execute) —
+  # add --execute to the command only after validating decisions in the journal.
+  scheduler:
+    build: .
+    profiles: ["live"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      STORAGE_BACKEND: timescale
+      TIMESCALE_DSN: postgresql://quant:quant@timescaledb:5432/quant
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ALPACA_PAPER: ${ALPACA_PAPER:-true}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["schedule", "SPY", "--strategy", "momentum", "--params", "lookback=100",
+              "--broker", "alpaca", "--stop-loss", "0.05", "--take-profit", "0.15",
+              "--at", "16:10", "--tz", "America/New_York"]
+
+volumes:
+  tsdata:

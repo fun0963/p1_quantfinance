@@ -1,0 +1,41 @@
+# --- Secrets ---
+.env
+
+# --- Local data / logs / reports ---
+data/
+logs/
+reports/
+!data/.gitkeep
+!logs/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# --- Tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- Notebooks scratch ---
+notebooks/*.ipynb_checkpoints
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Local tooling / reference (not part of this project) ---
+# machine-local Claude Code settings
+.claude/
+# third-party reference projects, vendored locally only
+01_ref/

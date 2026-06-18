@@ -1,0 +1,3 @@
+# Normalize line endings: store LF in the repo on every platform (CI is Linux),
+# so Windows checkouts don't introduce CRLF churn.
+* text=auto eol=lf

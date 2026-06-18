@@ -1,0 +1,22 @@
+# Keep the build context small & secret-free.
+.venv/
+venv/
+env/
+.git/
+.gitignore
+data/
+logs/
+reports/
+notebooks/
+01_ref/
+tests/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.env
+*.md
+!README.md

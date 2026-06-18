@@ -1,0 +1,10 @@
+{
+  "name": "balanced_2strat",
+  "cash": 100000,
+  "start": "2020-01-01",
+  "timeframe": "1d",
+  "legs": [
+    {"symbol": "SPY", "strategy": "momentum", "params": {"lookback": 100}, "weight": 0.5},
+    {"symbol": "QQQ", "strategy": "ma_cross", "params": {"fast": 20, "slow": 50}, "weight": 0.5}
+  ]
+}
