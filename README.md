@@ -1,5 +1,7 @@
 # Quant — Modular Quantitative Trading System
 
+[![CI](https://github.com/fun0963/p1_quantfinance/actions/workflows/ci.yml/badge.svg)](https://github.com/fun0963/p1_quantfinance/actions/workflows/ci.yml)
+
 A modular, debuggable quantitative trading system for **US equities / ETFs**,
 spanning **research → backtesting → paper execution → deployment**. Every layer
 sits behind a clean interface, and order routing is paper-only + dry-run by default.
@@ -101,6 +103,31 @@ quant download SPY --start 2020-01-01
 
 **How to change symbol / strategy / run the research workflow:** see
 [docs/USAGE.md](docs/USAGE.md).
+
+---
+
+## Continuous integration & pushing to GitHub
+
+Every push / PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) —
+**ruff** (lint + import order), **mypy** (types), and **pytest** (incl. the backtest
+regression suite) across Python 3.11 / 3.12. Run the identical gate locally before
+pushing:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ci.ps1   # ruff -> mypy -> pytest
+```
+
+First-time setup (the repo is already initialized with a first commit on `main`):
+
+```bash
+# Create an EMPTY GitHub repo (no README/.gitignore), then wire it up & push:
+git remote add origin https://github.com/<you>/<repo>.git
+git push -u origin main
+```
+
+CI triggers on that push — watch it under the repo's **Actions** tab (and the badge
+above). Secrets stay local: `.env`, `data/`, `logs/`, the `.venv/`, and the bulky
+`01_ref/` reference project are all git-ignored.
 
 ---
 
