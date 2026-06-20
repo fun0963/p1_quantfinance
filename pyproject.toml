@@ -11,9 +11,8 @@ dependencies = [
     "alpaca-py>=0.21",          # live/paper data + paper trading
     "yfinance>=0.2.40",         # free EOD historical data for research
     # --- Data processing ---
-    "pandas>=2.2",
+    "pandas>=2.2,<3",           # vectorbt requires the 2.x line
     "numpy>=1.26",
-    "pandas-ta>=0.3.14b0",      # pure-python technical indicators
     # --- Backtesting (dual engine) ---
     "vectorbt>=0.26",           # vectorized research / parameter sweeps
     "backtrader>=1.9.78.123",   # event-driven, live-like validation
