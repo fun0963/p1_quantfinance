@@ -101,7 +101,8 @@ pytest                             # smoke tests run with no keys/network
 quant download SPY --start 2020-01-01
 ```
 
-**How to change symbol / strategy / run the research workflow:** see
+**End-to-end usage guide (install → research → paper → live → deploy):** see
+[docs/GUIDE.md](docs/GUIDE.md). For changing symbol / strategy specifically, see
 [docs/USAGE.md](docs/USAGE.md).
 
 ---
