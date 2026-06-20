@@ -1,12 +1,13 @@
 # --- Secrets ---
 .env
 
-# --- Local data / logs / reports ---
-data/
-logs/
-reports/
-!data/.gitkeep
-!logs/.gitkeep
+# --- Local data / logs / reports (runtime output at the repo ROOT only) ---
+# Leading slash anchors these to the root so they DON'T match src/quant/data/ etc.
+/data/
+/logs/
+/reports/
+!/data/.gitkeep
+!/logs/.gitkeep
 
 # --- Python ---
 __pycache__/
