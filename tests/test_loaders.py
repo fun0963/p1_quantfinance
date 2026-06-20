@@ -1,11 +1,11 @@
-"""Tests for the date-slicing logic in the data loader (the cache-honors-start fix)."""
+"""Tests for the date-slicing + cache-coverage logic in the data loader."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 
-from quant.data.loaders import _slice_from
+from quant.data.loaders import _cache_covers, _slice_from
 
 
 def _frame(tz):
@@ -31,3 +31,14 @@ def test_slice_keeps_all_when_start_before_data():
     df = _frame("UTC")
     out = _slice_from(df, datetime(2010, 1, 1, tzinfo=UTC))
     assert len(out) == len(df)
+
+
+def test_cache_covers_exact_and_nontrading_gap():
+    assert _cache_covers(date(2020, 1, 1), date(2020, 1, 1))    # exact start
+    assert _cache_covers(date(2020, 1, 2), date(2020, 1, 1))    # 1-day holiday gap (the real-world case)
+    assert _cache_covers(date(2019, 12, 30), date(2020, 1, 1))  # cache reaches further back
+
+
+def test_cache_does_not_cover_genuinely_missing_history():
+    # Cache starts a full year after the request -> re-download to get earlier bars.
+    assert not _cache_covers(date(2021, 1, 1), date(2020, 1, 1))
