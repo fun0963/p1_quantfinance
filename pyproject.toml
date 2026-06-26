@@ -38,6 +38,10 @@ dev = [
 timescale = [
     "psycopg[binary]>=3.1",    # TimescaleDB / Postgres driver (optional storage backend)
 ]
+web = [
+    "fastapi>=0.109",          # read-only results dashboard API
+    "uvicorn[standard]>=0.27",  # ASGI server for `quant web`
+]
 
 [project.scripts]
 quant = "quant.cli:app"
@@ -78,4 +82,6 @@ asyncio_mode = "auto"
 filterwarnings = [
     # alpaca-py imports websockets.legacy (deprecated upstream) — nothing we can fix.
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    # starlette TestClient httpx deprecation (only when [web] is installed for tests).
+    "ignore:Using `httpx` with `starlette.testclient`:Warning",
 ]

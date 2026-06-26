@@ -577,5 +577,24 @@ def portfolio(
         typer.echo(f"\nEquity/drawdown chart -> {path}")
 
 
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", help="bind address (use 0.0.0.0 to expose on LAN)"),
+    port: int = typer.Option(8000),
+    reload: bool = typer.Option(False, "--reload", help="auto-reload on code changes (dev)"),
+) -> None:
+    """Launch the read-only results dashboard (backtest / portfolio / journal in the browser)."""
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        typer.echo('web deps not installed — run:  pip install -e ".[web]"')
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"dashboard : http://{host}:{port}")
+    typer.echo(f"API docs  : http://{host}:{port}/docs")
+    typer.echo("read-only — no order routing here (live trading stays in the CLI). Ctrl+C to stop.")
+    uvicorn.run("quant.web.app:app", host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     app()

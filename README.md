@@ -220,6 +220,18 @@ above). Secrets stay local: `.env`, `data/`, `logs/`, the `.venv/`, and the bulk
 > legs' -14%/-27%: legs correlate 0.7, so the blend smooths drawdown more than it
 > lifts Sharpe — pick lower-correlation legs for real diversification.
 
+### 🟡 Phase 5 — Usability & broker expansion
+- [ ] **Read-only results dashboard** (`quant web`, FastAPI) — see backtest / portfolio /
+      journal results in the browser instead of the terminal. Thin `web/` layer over the
+      existing functions; `/docs` gives an interactive API. Optional extra: `pip install -e ".[web]"`.
+      Read-only by design — live order routing stays in the CLI (no order buttons in the browser).
+- [ ] (future) **IBKR broker** via [`ib_async`](https://github.com/ib-api-reloaded/ib_async) —
+      an `IBKRBroker` adapter behind the existing `Broker` interface (mirrors `AlpacaBroker`),
+      so nothing upstream changes. Caveat: IBKR needs a running TWS/Gateway desktop app +
+      market-data subscriptions (heavier than Alpaca's REST). Full frameworks (NautilusTrader,
+      QuantConnect LEAN) are referenced for design ideas only — not adopted (they'd replace this
+      architecture, not extend it).
+
 ---
 
 ## Conventions

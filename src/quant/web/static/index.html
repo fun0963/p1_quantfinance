@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quant Results Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  :root{--bg:#0a0e17;--card:#111827;--line:#1e293b;--fg:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--good:#34d399;--bad:#f87171}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5;padding:1.5rem}
+  h1{font-size:1.3rem;color:var(--accent)}
+  .sub{color:var(--muted);font-size:.85rem;margin-bottom:1rem}
+  .tabs{display:flex;gap:.5rem;border-bottom:1px solid var(--line);margin-bottom:1rem}
+  .tab{padding:.5rem 1rem;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .panel{display:none}.panel.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:1rem}
+  label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:.2rem}
+  input,select,textarea{width:100%;background:#0b1220;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:.45rem .6rem;font-size:.9rem;font-family:inherit}
+  textarea{min-height:64px;resize:vertical}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:.75rem}
+  button{background:var(--accent);color:#06121c;border:none;border-radius:6px;padding:.55rem 1.2rem;font-weight:600;cursor:pointer;font-size:.9rem}
+  button:disabled{opacity:.5;cursor:wait}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.6rem;margin:.5rem 0 1rem}
+  .metric{background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem}
+  .metric .k{font-size:.72rem;color:var(--muted)}
+  .metric .v{font-size:1.1rem;font-weight:600;margin-top:.15rem}
+  table{width:100%;border-collapse:collapse;font-size:.83rem;margin-top:.5rem}
+  th,td{text-align:right;padding:.4rem .55rem;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:500}
+  .err{color:var(--bad);font-size:.85rem;white-space:pre-wrap}
+  .hint{color:var(--muted);font-size:.75rem;margin-top:.25rem}
+  .chart{height:340px;margin-top:.5rem}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+  <h1>📈 Quant Results Dashboard</h1>
+  <div class="sub">Read-only · backtest / portfolio / journal · interactive API at <a href="/docs" target="_blank">/docs</a></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="backtest">Backtest</div>
+    <div class="tab" data-tab="portfolio">Portfolio</div>
+    <div class="tab" data-tab="journal">Journal</div>
+  </div>
+
+  <!-- ================= BACKTEST ================= -->
+  <div class="panel active" id="panel-backtest">
+    <div class="card">
+      <div class="row">
+        <div><label>Symbol</label><input id="bt-symbol" value="SPY"></div>
+        <div><label>Strategy</label><select id="bt-strategy"></select></div>
+        <div><label>Params (k=v,k=v)</label><input id="bt-params" placeholder="lookback=100"></div>
+        <div><label>Start</label><input id="bt-start" value="2020-01-01"></div>
+        <div><label>Cash</label><input id="bt-cash" value="100000"></div>
+      </div>
+      <button id="bt-run">Run backtest</button>
+      <div class="hint" id="bt-grid"></div>
+      <div class="err" id="bt-err"></div>
+    </div>
+    <div class="card" id="bt-results" style="display:none">
+      <div id="bt-title" style="color:var(--muted);font-size:.85rem"></div>
+      <div class="metrics" id="bt-metrics"></div>
+      <div class="chart" id="bt-chart"></div>
+      <div class="chart" id="bt-dd" style="height:200px"></div>
+    </div>
+  </div>
+
+  <!-- ================= PORTFOLIO ================= -->
+  <div class="panel" id="panel-portfolio">
+    <div class="card">
+      <label>Legs &nbsp;<span class="hint">format: symbol:strategy:weight:params &nbsp;(one per line or ; separated)</span></label>
+      <textarea id="pf-legs">SPY:momentum:0.5:lookback=100
+QQQ:ma_cross:0.5:fast=20,slow=50</textarea>
+      <div class="row" style="margin-top:.75rem">
+        <div><label>Cash</label><input id="pf-cash" value="100000"></div>
+        <div><label>Start</label><input id="pf-start" value="2020-01-01"></div>
+      </div>
+      <button id="pf-run">Run portfolio</button>
+      <div class="err" id="pf-err"></div>
+    </div>
+    <div class="card" id="pf-results" style="display:none">
+      <div class="metrics" id="pf-metrics"></div>
+      <div id="pf-verdict" style="color:var(--muted);font-size:.85rem;margin-bottom:.5rem"></div>
+      <div id="pf-legs-table"></div>
+      <div id="pf-corr" style="margin-top:1rem"></div>
+      <div class="chart" id="pf-chart"></div>
+    </div>
+  </div>
+
+  <!-- ================= JOURNAL ================= -->
+  <div class="panel" id="panel-journal">
+    <div class="card">
+      <button class="ghost" id="jn-sessions">Load sessions</button>
+      <button class="ghost" id="jn-live">Load live decisions</button>
+      <div class="err" id="jn-err"></div>
+      <div id="jn-table" style="margin-top:.75rem"></div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = v => (v===null||v===undefined||v==="") ? "—" : v;
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(typeof body.detail==="string"?body.detail:JSON.stringify(body.detail||body));
+  return body;
+}
+function parseParams(s){
+  const o={}; (s||"").split(",").forEach(p=>{const [k,v]=p.split("=");if(k&&k.trim()){const n=Number(v);o[k.trim()]=isNaN(n)?v:n;}}); return o;
+}
+function parseLegs(s){
+  return (s||"").split(/[;\n]/).map(c=>c.trim()).filter(Boolean).map(c=>{
+    const p=c.split(":"); if(p.length<3) throw new Error(`leg "${c}" must be symbol:strategy:weight[:params]`);
+    return {symbol:p[0].trim(), strategy:p[1].trim(), weight:Number(p[2]), params:p[3]?parseParams(p[3]):{}};
+  });
+}
+function metrics(obj, keys){
+  return keys.map(([k,label])=>`<div class="metric"><div class="k">${label}</div><div class="v">${fmt(obj[k])}</div></div>`).join("");
+}
+function tableHTML(rows){
+  if(!rows||!rows.length) return '<div class="hint">no rows</div>';
+  const cols=Object.keys(rows[0]);
+  const head=cols.map(c=>`<th>${c}</th>`).join("");
+  const body=rows.map(r=>`<tr>${cols.map(c=>`<td>${fmt(r[c])}</td>`).join("")}</tr>`).join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function drawdown(values){
+  let peak=-Infinity; return values.map(v=>{peak=Math.max(peak,v);return +(((v/peak)-1)*100).toFixed(2);});
+}
+const LAYOUT={paper_bgcolor:"transparent",plot_bgcolor:"transparent",font:{color:"#94a3b8"},margin:{t:30,r:10,b:30,l:55},xaxis:{gridcolor:"#1e293b"},yaxis:{gridcolor:"#1e293b"}};
+function plotEquity(div,eq,title){
+  Plotly.newPlot(div,[{x:eq.dates,y:eq.values,type:"scatter",mode:"lines",line:{color:"#38bdf8"},name:"equity"}],
+    {...LAYOUT,title:{text:title,font:{size:13,color:"#94a3b8"}}},{displayModeBar:false,responsive:true});
+}
+function plotDD(div,eq){
+  Plotly.newPlot(div,[{x:eq.dates,y:drawdown(eq.values),type:"scatter",mode:"lines",fill:"tozeroy",line:{color:"#f87171"},name:"drawdown %"}],
+    {...LAYOUT,title:{text:"Drawdown %",font:{size:12,color:"#94a3b8"}}},{displayModeBar:false,responsive:true});
+}
+
+// tabs
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); $("panel-"+t.dataset.tab).classList.add("active");
+});
+
+const MKEYS=[["final_equity","Final equity"],["total_return_pct","Return %"],["cagr_pct","CAGR %"],["sharpe","Sharpe"],["max_drawdown_pct","Max DD %"],["num_trades","Trades"]];
+
+// strategies dropdown + grid hint
+let GRIDS={};
+api("/api/strategies").then(d=>{
+  const sel=$("bt-strategy");
+  d.strategies.forEach(s=>{GRIDS[s.name]=s.default_grid; const o=document.createElement("option");o.value=s.name;o.textContent=s.name;sel.appendChild(o);});
+  sel.value="momentum"; showGrid();
+}).catch(e=>$("bt-err").textContent=e.message);
+function showGrid(){const g=GRIDS[$("bt-strategy").value];$("bt-grid").textContent=g?("default grid: "+JSON.stringify(g)):"";}
+$("bt-strategy").onchange=showGrid;
+
+// backtest
+$("bt-run").onclick=async()=>{
+  const btn=$("bt-run"); btn.disabled=true; $("bt-err").textContent="";
+  try{
+    const body={symbol:$("bt-symbol").value.trim().toUpperCase(),strategy:$("bt-strategy").value,
+      params:parseParams($("bt-params").value),start:$("bt-start").value.trim(),cash:Number($("bt-cash").value)};
+    const d=await api("/api/backtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("bt-results").style.display="block";
+    $("bt-title").textContent=`${d.strategy} on ${d.symbol} · ${d.bars} bars · ${d.period[0]} → ${d.period[1]}`;
+    $("bt-metrics").innerHTML=metrics(d.metrics,MKEYS);
+    plotEquity("bt-chart",d.equity,"Equity"); plotDD("bt-dd",d.equity);
+  }catch(e){$("bt-err").textContent=e.message;} finally{btn.disabled=false;}
+};
+
+// portfolio
+$("pf-run").onclick=async()=>{
+  const btn=$("pf-run"); btn.disabled=true; $("pf-err").textContent="";
+  try{
+    const body={legs:parseLegs($("pf-legs").value),cash:Number($("pf-cash").value),start:$("pf-start").value.trim()};
+    const d=await api("/api/portfolio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("pf-results").style.display="block";
+    $("pf-metrics").innerHTML=metrics(d.metrics,MKEYS);
+    $("pf-verdict").textContent=`blended Sharpe ${fmt(d.metrics.sharpe)} vs weighted-avg ${fmt(d.weighted_avg_sharpe)} → diversification ratio ${fmt(d.diversification_ratio)}`;
+    $("pf-legs-table").innerHTML=tableHTML(d.legs.map(l=>({leg:l.label,weight:l.weight,"return%":l.metrics.total_return_pct,sharpe:l.metrics.sharpe,"maxDD%":l.metrics.max_drawdown_pct})));
+    // correlation matrix
+    const L=d.correlation.labels;
+    const corrRows=L.map((lab,i)=>{const o={"":lab};L.forEach((c,j)=>o[c]=d.correlation.matrix[i][j]);return o;});
+    $("pf-corr").innerHTML="<div class='hint'>leg-return correlation</div>"+tableHTML(corrRows);
+    plotEquity("pf-chart",d.equity,"Portfolio equity");
+  }catch(e){$("pf-err").textContent=e.message;} finally{btn.disabled=false;}
+};
+
+// journal
+async function loadJournal(path){
+  $("jn-err").textContent="";
+  try{const d=await api(path); $("jn-table").innerHTML=tableHTML(d.rows);}
+  catch(e){$("jn-err").textContent=e.message;}
+}
+$("jn-sessions").onclick=()=>loadJournal("/api/journal/sessions");
+$("jn-live").onclick=()=>loadJournal("/api/journal/live");
+</script>
+</body>
+</html>
