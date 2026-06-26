@@ -7,12 +7,18 @@ places an order.
 """
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
-from quant.web.schemas import BacktestRequest, PortfolioRequest
+from quant.web.schemas import (
+    BacktestRequest,
+    PortfolioRequest,
+    SweepRequest,
+    WalkforwardRequest,
+)
 
 router = APIRouter()
 
@@ -23,6 +29,12 @@ def _equity_json(equity: pd.Series) -> dict:
         "dates": [str(ts.date()) for ts in equity.index],
         "values": [round(float(v), 2) for v in equity.to_numpy()],
     }
+
+
+def _records(df: pd.DataFrame) -> list[dict]:
+    """DataFrame -> list[dict] via pandas' JSON encoder, so numpy ints/floats and
+    NaN are serialized cleanly (NaN -> null) for FastAPI."""
+    return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
 def _load(symbol: str, start: str, timeframe: str) -> pd.DataFrame:
@@ -56,14 +68,27 @@ def backtest(req: BacktestRequest) -> dict:
     except Exception as exc:  # data/network/engine failures -> 500 with the message
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
+    from quant.backtest.metrics import alpha_beta, trade_stats, yearly_returns
+
+    metrics = {**res.metrics, **trade_stats(res.trades)}
+    # Alpha / Beta vs SPY buy-and-hold (best-effort — never fail the backtest on it).
+    try:
+        bench_close = _load("SPY", req.start, req.timeframe)["close"]
+        strat_ret = res.equity_curve.pct_change(fill_method=None)
+        bench_ret = bench_close.reindex(res.equity_curve.index).ffill().pct_change(fill_method=None)
+        metrics.update(alpha_beta(strat_ret, bench_ret))
+    except Exception:  # noqa: BLE001 - benchmark is a bonus
+        pass
+
     return {
         "symbol": req.symbol,
         "strategy": req.strategy,
         "params": req.params,
         "bars": int(len(data)),
         "period": [str(data.index[0].date()), str(data.index[-1].date())],
-        "metrics": res.metrics,
+        "metrics": metrics,
         "equity": _equity_json(res.equity_curve),
+        "yearly_returns": yearly_returns(res.equity_curve),
     }
 
 
@@ -92,13 +117,55 @@ def portfolio(req: PortfolioRequest) -> dict:
     }
 
 
+@router.post("/sweep", summary="Vectorized parameter sweep — ranked combos")
+def sweep_endpoint(req: SweepRequest) -> dict:
+    from quant.backtest.optimize import sweep
+    from quant.strategies.registry import get_strategy_cls
+
+    try:
+        cls = get_strategy_cls(req.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        data = _load(req.symbol, req.start, req.timeframe)
+        results = sweep(cls, data, grid=req.grid or None, sort_by=req.sort_by, timeframe=req.timeframe)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    return {
+        "sort_by": req.sort_by,
+        "total": int(len(results)),
+        "columns": list(results.columns),
+        "rows": _records(results.head(req.top).round(3)),
+    }
+
+
+@router.post("/walkforward", summary="Walk-forward out-of-sample validation")
+def walkforward_endpoint(req: WalkforwardRequest) -> dict:
+    from quant.backtest.walkforward import summarize, walk_forward
+    from quant.strategies.registry import get_strategy_cls
+
+    try:
+        cls = get_strategy_cls(req.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        data = _load(req.symbol, req.start, req.timeframe)
+        wf = walk_forward(cls, data, grid=req.grid or None, train_bars=req.train_bars,
+                          test_bars=req.test_bars, sort_by=req.sort_by, timeframe=req.timeframe)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    return {"folds": _records(wf.round(3)), "summary": summarize(wf)}
+
+
 @router.get("/journal/sessions", summary="Recent paper/live sessions")
 def journal_sessions(limit: int = 20) -> dict:
     from quant.execution import TradeJournal
 
     with TradeJournal() as tj:
         df = tj.sessions(limit=limit)
-    return {"rows": df.to_dict(orient="records")}
+    return {"rows": _records(df)}
 
 
 @router.get("/journal/live", summary="Recent live-runner decisions")
@@ -107,4 +174,4 @@ def journal_live(limit: int = 30) -> dict:
 
     with TradeJournal() as tj:
         df = tj.live_log(limit=limit)
-    return {"rows": df.where(pd.notna(df), None).to_dict(orient="records")}
+    return {"rows": _records(df)}

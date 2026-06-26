@@ -32,6 +32,27 @@ class PortfolioRequest(BaseModel):
     timeframe: str = "1d"
 
 
+class SweepRequest(BaseModel):
+    symbol: str = "SPY"
+    strategy: str = "momentum"
+    grid: dict[str, list[float]] = Field(default_factory=dict, description="empty = strategy default grid")
+    start: str = "2020-01-01"
+    timeframe: str = "1d"
+    sort_by: str = "sharpe"
+    top: int = 20
+
+
+class WalkforwardRequest(BaseModel):
+    symbol: str = "SPY"
+    strategy: str = "momentum"
+    grid: dict[str, list[float]] = Field(default_factory=dict, description="empty = strategy default grid")
+    start: str = "2015-01-01"
+    timeframe: str = "1d"
+    train_bars: int = 504
+    test_bars: int = 126
+    sort_by: str = "sharpe"
+
+
 class EquityCurve(BaseModel):
     """Plot-ready equity curve: parallel date/value arrays."""
     dates: list[str]

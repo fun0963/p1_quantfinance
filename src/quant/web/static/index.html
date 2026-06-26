@@ -44,6 +44,8 @@
   <div class="tabs">
     <div class="tab active" data-tab="backtest">Backtest</div>
     <div class="tab" data-tab="portfolio">Portfolio</div>
+    <div class="tab" data-tab="sweep">Sweep</div>
+    <div class="tab" data-tab="walkforward">Walk-forward</div>
     <div class="tab" data-tab="journal">Journal</div>
   </div>
 
@@ -66,6 +68,7 @@
       <div class="metrics" id="bt-metrics"></div>
       <div class="chart" id="bt-chart"></div>
       <div class="chart" id="bt-dd" style="height:200px"></div>
+      <div class="chart" id="bt-year" style="height:220px"></div>
     </div>
   </div>
 
@@ -88,6 +91,48 @@ QQQ:ma_cross:0.5:fast=20,slow=50</textarea>
       <div id="pf-legs-table"></div>
       <div id="pf-corr" style="margin-top:1rem"></div>
       <div class="chart" id="pf-chart"></div>
+    </div>
+  </div>
+
+  <!-- ================= SWEEP ================= -->
+  <div class="panel" id="panel-sweep">
+    <div class="card">
+      <div class="row">
+        <div><label>Symbol</label><input id="sw-symbol" value="SPY"></div>
+        <div><label>Strategy</label><select id="sw-strategy"></select></div>
+        <div><label>Start</label><input id="sw-start" value="2020-01-01"></div>
+        <div><label>Sort by</label><select id="sw-sort"><option>sharpe</option><option>total_return_pct</option><option>max_drawdown_pct</option></select></div>
+        <div><label>Top N</label><input id="sw-top" value="20"></div>
+      </div>
+      <label>Grid override <span class="hint">blank = strategy default · format: k=v1,v2;k2=v3,v4</span></label>
+      <input id="sw-grid" placeholder="lookback=20,50,100,200;buffer=0,0.05">
+      <div style="margin-top:.6rem"><button id="sw-run">Run sweep</button></div>
+      <div class="err" id="sw-err"></div>
+    </div>
+    <div class="card" id="sw-results" style="display:none">
+      <div id="sw-title" style="color:var(--muted);font-size:.85rem"></div>
+      <div id="sw-table"></div>
+    </div>
+  </div>
+
+  <!-- ================= WALK-FORWARD ================= -->
+  <div class="panel" id="panel-walkforward">
+    <div class="card">
+      <div class="row">
+        <div><label>Symbol</label><input id="wf-symbol" value="SPY"></div>
+        <div><label>Strategy</label><select id="wf-strategy"></select></div>
+        <div><label>Start</label><input id="wf-start" value="2015-01-01"></div>
+        <div><label>Train bars</label><input id="wf-train" value="504"></div>
+        <div><label>Test bars</label><input id="wf-test" value="126"></div>
+      </div>
+      <label>Grid override <span class="hint">blank = strategy default</span></label>
+      <input id="wf-grid" placeholder="lookback=20,50,100,200">
+      <div style="margin-top:.6rem"><button id="wf-run">Run walk-forward</button></div>
+      <div class="err" id="wf-err"></div>
+    </div>
+    <div class="card" id="wf-results" style="display:none">
+      <div id="wf-verdict" style="font-size:.9rem;margin-bottom:.5rem"></div>
+      <div id="wf-table"></div>
     </div>
   </div>
 
@@ -120,6 +165,11 @@ function parseLegs(s){
     return {symbol:p[0].trim(), strategy:p[1].trim(), weight:Number(p[2]), params:p[3]?parseParams(p[3]):{}};
   });
 }
+function parseGrid(s){
+  const o={}; (s||"").split(";").map(a=>a.trim()).filter(Boolean).forEach(a=>{
+    const [k,vals]=a.split("="); if(k&&vals){o[k.trim()]=vals.split(",").map(v=>Number(v.trim())).filter(v=>!isNaN(v));}
+  }); return o;
+}
 function metrics(obj, keys){
   return keys.map(([k,label])=>`<div class="metric"><div class="k">${label}</div><div class="v">${fmt(obj[k])}</div></div>`).join("");
 }
@@ -142,6 +192,11 @@ function plotDD(div,eq){
   Plotly.newPlot(div,[{x:eq.dates,y:drawdown(eq.values),type:"scatter",mode:"lines",fill:"tozeroy",line:{color:"#f87171"},name:"drawdown %"}],
     {...LAYOUT,title:{text:"Drawdown %",font:{size:12,color:"#94a3b8"}}},{displayModeBar:false,responsive:true});
 }
+function plotYearly(div,yearly){
+  const years=Object.keys(yearly||{}), vals=years.map(y=>yearly[y]);
+  Plotly.newPlot(div,[{x:years,y:vals,type:"bar",marker:{color:vals.map(v=>v>=0?"#34d399":"#f87171")}}],
+    {...LAYOUT,title:{text:"Yearly return %",font:{size:12,color:"#94a3b8"}}},{displayModeBar:false,responsive:true});
+}
 
 // tabs
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
@@ -150,14 +205,18 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   t.classList.add("active"); $("panel-"+t.dataset.tab).classList.add("active");
 });
 
-const MKEYS=[["final_equity","Final equity"],["total_return_pct","Return %"],["cagr_pct","CAGR %"],["sharpe","Sharpe"],["max_drawdown_pct","Max DD %"],["num_trades","Trades"]];
+const CORE=[["final_equity","Final equity"],["total_return_pct","Return %"],["cagr_pct","CAGR %"],["sharpe","Sharpe"],["max_drawdown_pct","Max DD %"],["num_trades","Trades"]];
+const BT_EXTRA=[["win_rate_pct","Win rate %"],["payoff_ratio","Payoff"],["alpha_pct","Alpha %"],["beta","Beta"]];
 
-// strategies dropdown + grid hint
+// strategies dropdown(s) + grid hint
 let GRIDS={};
 api("/api/strategies").then(d=>{
-  const sel=$("bt-strategy");
-  d.strategies.forEach(s=>{GRIDS[s.name]=s.default_grid; const o=document.createElement("option");o.value=s.name;o.textContent=s.name;sel.appendChild(o);});
-  sel.value="momentum"; showGrid();
+  ["bt-strategy","sw-strategy","wf-strategy"].forEach(id=>{
+    const sel=$(id);
+    d.strategies.forEach(s=>{GRIDS[s.name]=s.default_grid; const o=document.createElement("option");o.value=s.name;o.textContent=s.name;sel.appendChild(o);});
+    sel.value="momentum";
+  });
+  showGrid();
 }).catch(e=>$("bt-err").textContent=e.message);
 function showGrid(){const g=GRIDS[$("bt-strategy").value];$("bt-grid").textContent=g?("default grid: "+JSON.stringify(g)):"";}
 $("bt-strategy").onchange=showGrid;
@@ -171,8 +230,8 @@ $("bt-run").onclick=async()=>{
     const d=await api("/api/backtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     $("bt-results").style.display="block";
     $("bt-title").textContent=`${d.strategy} on ${d.symbol} · ${d.bars} bars · ${d.period[0]} → ${d.period[1]}`;
-    $("bt-metrics").innerHTML=metrics(d.metrics,MKEYS);
-    plotEquity("bt-chart",d.equity,"Equity"); plotDD("bt-dd",d.equity);
+    $("bt-metrics").innerHTML=metrics(d.metrics,CORE.concat(BT_EXTRA));
+    plotEquity("bt-chart",d.equity,"Equity"); plotDD("bt-dd",d.equity); plotYearly("bt-year",d.yearly_returns);
   }catch(e){$("bt-err").textContent=e.message;} finally{btn.disabled=false;}
 };
 
@@ -183,7 +242,7 @@ $("pf-run").onclick=async()=>{
     const body={legs:parseLegs($("pf-legs").value),cash:Number($("pf-cash").value),start:$("pf-start").value.trim()};
     const d=await api("/api/portfolio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     $("pf-results").style.display="block";
-    $("pf-metrics").innerHTML=metrics(d.metrics,MKEYS);
+    $("pf-metrics").innerHTML=metrics(d.metrics,CORE);
     $("pf-verdict").textContent=`blended Sharpe ${fmt(d.metrics.sharpe)} vs weighted-avg ${fmt(d.weighted_avg_sharpe)} → diversification ratio ${fmt(d.diversification_ratio)}`;
     $("pf-legs-table").innerHTML=tableHTML(d.legs.map(l=>({leg:l.label,weight:l.weight,"return%":l.metrics.total_return_pct,sharpe:l.metrics.sharpe,"maxDD%":l.metrics.max_drawdown_pct})));
     // correlation matrix
@@ -202,6 +261,35 @@ async function loadJournal(path){
 }
 $("jn-sessions").onclick=()=>loadJournal("/api/journal/sessions");
 $("jn-live").onclick=()=>loadJournal("/api/journal/live");
+
+// sweep
+$("sw-run").onclick=async()=>{
+  const btn=$("sw-run"); btn.disabled=true; $("sw-err").textContent="";
+  try{
+    const body={symbol:$("sw-symbol").value.trim().toUpperCase(),strategy:$("sw-strategy").value,
+      grid:parseGrid($("sw-grid").value),start:$("sw-start").value.trim(),sort_by:$("sw-sort").value,top:Number($("sw-top").value)};
+    const d=await api("/api/sweep",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("sw-results").style.display="block";
+    $("sw-title").textContent=`${d.total} combos ranked by ${d.sort_by} — top ${d.rows.length}`;
+    $("sw-table").innerHTML=tableHTML(d.rows);
+  }catch(e){$("sw-err").textContent=e.message;} finally{btn.disabled=false;}
+};
+
+// walk-forward
+$("wf-run").onclick=async()=>{
+  const btn=$("wf-run"); btn.disabled=true; $("wf-err").textContent="";
+  try{
+    const body={symbol:$("wf-symbol").value.trim().toUpperCase(),strategy:$("wf-strategy").value,
+      grid:parseGrid($("wf-grid").value),start:$("wf-start").value.trim(),train_bars:Number($("wf-train").value),test_bars:Number($("wf-test").value)};
+    const d=await api("/api/walkforward",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("wf-results").style.display="block";
+    const s=d.summary, eff=s.wf_efficiency;
+    const verdict=eff>=0.5?"robust":(eff>=0?"fragile / possible overfit":"broken OOS");
+    const color=eff>=0.5?"var(--good)":(eff>=0?"#fbbf24":"var(--bad)");
+    $("wf-verdict").innerHTML=`WF efficiency <b style="color:${color}">${fmt(eff)}</b> → ${verdict} &nbsp;·&nbsp; OOS Sharpe ${fmt(s.mean_oos_sharpe)} vs IS ${fmt(s.mean_is_sharpe)} (${d.folds.length} folds)`;
+    $("wf-table").innerHTML=tableHTML(d.folds);
+  }catch(e){$("wf-err").textContent=e.message;} finally{btn.disabled=false;}
+};
 </script>
 </body>
 </html>

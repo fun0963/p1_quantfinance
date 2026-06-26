@@ -68,6 +68,39 @@ def test_portfolio_combines_legs(monkeypatch):
     assert "sharpe" in body["metrics"]
 
 
+def test_backtest_includes_trade_stats_and_yearly(monkeypatch):
+    import quant.web.routes as routes
+    monkeypatch.setattr(routes, "_load", lambda *a, **k: _uptrend(n=400))
+    body = client.post("/api/backtest", json={"symbol": "QQQ", "strategy": "momentum",
+                                              "params": {"lookback": 50}}).json()
+    assert "yearly_returns" in body
+    # benchmark load is also stubbed to _uptrend, so alpha/beta computes
+    assert "beta" in body["metrics"]
+
+
+def test_sweep_returns_ranked_rows(monkeypatch):
+    import quant.web.routes as routes
+    monkeypatch.setattr(routes, "_load", lambda *a, **k: _uptrend(n=300))
+    r = client.post("/api/sweep", json={"symbol": "SPY", "strategy": "ma_cross",
+                                        "grid": {"fast": [5, 10], "slow": [20, 30]}, "top": 5})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] >= 1 and len(body["rows"]) >= 1
+    assert "sharpe" in body["columns"]
+
+
+def test_walkforward_returns_folds_and_summary(monkeypatch):
+    import quant.web.routes as routes
+    monkeypatch.setattr(routes, "_load", lambda *a, **k: _uptrend(n=900))
+    r = client.post("/api/walkforward", json={"symbol": "SPY", "strategy": "momentum",
+                                              "grid": {"lookback": [20, 50]},
+                                              "train_bars": 300, "test_bars": 120})
+    assert r.status_code == 200
+    body = r.json()
+    assert "wf_efficiency" in body["summary"]
+    assert isinstance(body["folds"], list)
+
+
 def test_journal_endpoint_shape():
     r = client.get("/api/journal/sessions")
     assert r.status_code == 200 and "rows" in r.json()
