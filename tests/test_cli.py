@@ -66,7 +66,7 @@ def test_info_command_lists_settings_and_strategies():
 def test_backtest_command_end_to_end(monkeypatch):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
     r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
-                                "--params", "fast=5,slow=20", "--engine", "vectorbt"])
+                                "--params", "fast=5,slow=20", "--engine", "vectorbt", "--no-log"])
     assert r.exit_code == 0, r.output
     assert "vectorbt" in r.output and "sharpe" in r.output
 
@@ -81,7 +81,7 @@ def test_backtest_unknown_strategy_errors(monkeypatch):
 def test_backtest_reports_cost_model(monkeypatch):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
     r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
-                                "--engine", "vectorbt", "--slippage-bps", "20"])
+                                "--engine", "vectorbt", "--slippage-bps", "20", "--no-log"])
     assert r.exit_code == 0, r.output
     assert "cost model" in r.output and "slippage 20.0 bps" in r.output
 
@@ -104,6 +104,25 @@ def test_backtest_calibrate_from_tca(monkeypatch):
         total_notional_usd=1_000_000, total_commission_usd=100.0, avg_slippage_bps=8.0))
 
     r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
-                                "--engine", "vectorbt", "--calibrate"])
+                                "--engine", "vectorbt", "--calibrate", "--no-log"])
     assert r.exit_code == 0, r.output
     assert "fees 1.0 bps" in r.output and "slippage 8.0 bps" in r.output
+
+
+def test_backtest_logs_experiment_and_experiments_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+
+    # Point the experiment store at a temp db so the run is hermetic.
+    import quant.research as research
+    real = research.ExperimentStore
+    monkeypatch.setattr(research, "ExperimentStore", lambda *a, **k: real(db_path=tmp_path / "exp.db"))
+
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--engine", "vectorbt", "--note", "smoke"])
+    assert r.exit_code == 0, r.output
+    assert "logged experiment" in r.output
+
+    # The `experiments` command reads it back.
+    r2 = runner.invoke(cli.app, ["experiments"])
+    assert r2.exit_code == 0, r2.output
+    assert "ma_cross" in r2.output and "SPY" in r2.output

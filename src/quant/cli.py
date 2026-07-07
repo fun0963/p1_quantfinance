@@ -354,6 +354,9 @@ def backtest(
                                    help="derive fees+slippage from the live journal's TCA history"),
     no_cache: bool = typer.Option(False, "--no-cache", help="force re-download"),
     plot: bool = typer.Option(False, "--plot", help="save an interactive equity/drawdown HTML"),
+    log_experiment: bool = typer.Option(True, "--log/--no-log",
+                                        help="record this run to the experiment store"),
+    note: str = typer.Option("", help="free-text note attached to the logged experiment"),
 ) -> None:
     """Backtest a strategy and compare engines side by side."""
     from quant.backtest.backtrader_engine import BacktraderEngine
@@ -390,12 +393,57 @@ def backtest(
         row = f"{k:<20}" + "".join(f"{str(r.metrics.get(k)):>14}" for r in results.values())
         typer.echo(row)
 
+    if log_experiment:
+        from quant.research import ExperimentStore, log_backtest
+
+        parsed = _parse_params(params)
+        with ExperimentStore() as store:
+            ids = [log_backtest(store, r, symbol=symbol, strategy=strategy, params=parsed,
+                                start=start, timeframe=timeframe, cost=cost, data=data, notes=note)
+                   for r in results.values()]
+        typer.echo(f"\nlogged experiment(s) {ids} (quant experiments to review)")
+
     if plot:
         from quant.backtest.plots import plot_equity
 
         path = plot_equity(results, out_path=f"reports/equity_{symbol}_{strategy}.html",
                            title=f"{strat.name} on {symbol}")
         typer.echo(f"\nEquity/drawdown chart -> {path}")
+
+
+@app.command()
+def experiments(
+    strategy: str = typer.Option("", help="filter by strategy"),
+    symbol: str = typer.Option("", help="filter by symbol"),
+    limit: int = typer.Option(20, help="how many recent experiments to show"),
+    show: int = typer.Option(0, "--id", help="show the full record for one experiment id"),
+) -> None:
+    """Review logged backtest experiments (the anti-overfitting research log)."""
+    from quant.research import ExperimentStore
+
+    with ExperimentStore() as store:
+        if show:
+            rec = store.get(show)
+            if rec is None:
+                typer.echo(f"no experiment #{show}")
+                raise typer.Exit(code=1)
+            dirty = " (dirty)" if rec["git_dirty"] else ""
+            typer.echo(f"\nexperiment #{rec['id']}  {rec['kind']}  {rec['symbol']}/{rec['strategy']}")
+            typer.echo(f"  run_at   : {rec['run_at']}")
+            typer.echo(f"  git      : {rec['git_hash']}{dirty}")
+            typer.echo(f"  engine   : {rec['engine']}   cost: {rec['fees_bps']}+{rec['slippage_bps']} bps")
+            typer.echo(f"  params   : {rec['params']}")
+            typer.echo(f"  data     : {rec['data_bars']} bars {rec['data_start']} -> {rec['data_end']}")
+            typer.echo(f"  metrics  : {rec['metrics']}")
+            if rec["notes"]:
+                typer.echo(f"  notes    : {rec['notes']}")
+            return
+        df = store.recent(limit=limit, strategy=strategy or None, symbol=symbol or None)
+        if df.empty:
+            typer.echo("no experiments logged yet (run `quant backtest ...`)")
+            return
+        typer.echo(f"\n{len(df)} recent experiment(s):\n")
+        typer.echo(df.to_string(index=False))
 
 
 @app.command()
