@@ -76,6 +76,50 @@ CREATE TABLE IF NOT EXISTS live_log (
     dry_run   INTEGER,
     reason    TEXT
 );
+
+-- OMS: the lifecycle of every REAL order the live runner places. `intended_price`
+-- is the arrival/decision price (latest close when we decided) — the TCA benchmark
+-- that `avg_fill_price` is measured against.
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_order_id TEXT UNIQUE,     -- our idempotency id
+    broker_order_id TEXT,            -- id returned by the broker
+    symbol   TEXT NOT NULL,
+    side     TEXT NOT NULL,          -- buy | sell
+    qty      REAL NOT NULL,          -- intended quantity
+    order_type TEXT,
+    intended_price REAL,             -- arrival/decision price (TCA benchmark)
+    strategy TEXT,
+    status   TEXT NOT NULL,          -- OrderState: NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|CANCELED|REJECTED|EXPIRED
+    filled_qty REAL DEFAULT 0,
+    avg_fill_price REAL,
+    commission REAL DEFAULT 0,
+    submitted_at TEXT,
+    updated_at   TEXT,
+    filled_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS order_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    ts         TEXT NOT NULL,
+    from_state TEXT,
+    to_state   TEXT NOT NULL,
+    detail     TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS ix_order_events_order ON order_events(order_id);
+
+-- Heartbeats: proof-of-life for each component (scheduler, live step). A missing
+-- heartbeat = a job that didn't run; the daily health check flags the silence.
+CREATE TABLE IF NOT EXISTS heartbeats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        TEXT NOT NULL,        -- when recorded (UTC)
+    component TEXT NOT NULL,        -- scheduler | live | ...
+    status    TEXT NOT NULL,        -- ok | warn | error
+    detail    TEXT,
+    meta      TEXT                  -- json blob (symbol, bar_ts, action, latency...)
+);
+CREATE INDEX IF NOT EXISTS ix_heartbeats_component ON heartbeats(component, id);
 """
 
 
@@ -193,4 +237,27 @@ class TradeJournal:
         return pd.read_sql_query(
             "SELECT ts, reason FROM blocked WHERE session_id = ? ORDER BY id",
             self.conn, params=(session_id,),
+        )
+
+    def orders(self, limit: int = 100) -> pd.DataFrame:
+        """OMS order records (newest first). Used by TCA, the daily report, and the UI."""
+        return pd.read_sql_query(
+            "SELECT id, client_order_id, broker_order_id, symbol, side, qty, order_type, "
+            "intended_price, strategy, status, filled_qty, avg_fill_price, commission, "
+            "submitted_at, updated_at, filled_at FROM orders ORDER BY id DESC LIMIT ?",
+            self.conn, params=(limit,),
+        )
+
+    def order_events(self, order_id: int) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT ts, from_state, to_state, detail FROM order_events "
+            "WHERE order_id = ? ORDER BY id",
+            self.conn, params=(order_id,),
+        )
+
+    def heartbeats(self, limit: int = 50) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT id, ts, component, status, detail, meta FROM heartbeats "
+            "ORDER BY id DESC LIMIT ?",
+            self.conn, params=(limit,),
         )

@@ -657,5 +657,107 @@ def alert_test() -> None:
     typer.echo(f"sent via {type(n).__name__}: {'ok' if ok else 'failed (see log)'}")
 
 
+@app.command()
+def oms(
+    broker: str = typer.Option("alpaca", help="alpaca | paper (only needed with --sync)"),
+    sync: bool = typer.Option(False, "--sync", help="poll the broker and advance order states first"),
+    limit: int = typer.Option(20, help="how many recent orders to list"),
+) -> None:
+    """Order lifecycle: list tracked orders and their state (optionally sync from the broker)."""
+    from quant.execution import TradeJournal
+    from quant.ops.oms import OMS
+
+    with TradeJournal() as tj:
+        if sync:
+            n = OMS(tj).sync(_live_broker(broker))
+            typer.echo(f"synced: {n} order(s) advanced\n")
+        rows = tj.orders(limit=limit)
+        if rows.empty:
+            typer.echo("no orders tracked yet — place one via `quant live --execute`")
+            return
+        cols = ["id", "symbol", "side", "qty", "status", "intended_price",
+                "avg_fill_price", "filled_qty", "broker_order_id"]
+        typer.echo(f"Tracked orders (newest first), db: {tj.path}\n")
+        typer.echo(rows[cols].to_string(index=False))
+
+
+@app.command()
+def tca(
+    strategy: str = typer.Option("", help="filter to one strategy (blank = all)"),
+    limit: int = typer.Option(1000, help="how many recent orders to analyse"),
+) -> None:
+    """Transaction cost analysis: slippage (intended vs actual fill) + commissions."""
+    from quant.execution import TradeJournal
+    from quant.ops.tca import tca_report
+
+    with TradeJournal() as tj:
+        rep = tca_report(tj, strategy=strategy or None, limit=limit)
+    typer.echo("\n" + rep.summary())
+    if rep.n_filled:
+        cols = ["symbol", "side", "filled_qty", "intended_price", "avg_fill_price",
+                "slippage_bps", "total_cost_usd"]
+        avail = [c for c in cols if c in rep.per_order.columns]
+        typer.echo("\nper-order:")
+        typer.echo(rep.per_order[avail].to_string(index=False))
+
+
+@app.command()
+def health(
+    max_silence_minutes: int = typer.Option(1500, help="flag a component silent longer than this (~25h)"),
+    alert: bool = typer.Option(False, "--alert", help="send an alert if health is degraded"),
+) -> None:
+    """System health: per-component heartbeats and missed-run detection."""
+    from quant.execution import TradeJournal
+    from quant.ops.health import health_check
+    from quant.ops.notify import get_notifier
+
+    with TradeJournal() as tj:
+        rep = health_check(tj, max_silence_minutes=max_silence_minutes)
+    typer.echo("\n" + rep.summary())
+    for c in rep.components:
+        age = f"{c.age_minutes:.0f}m ago" if c.age_minutes is not None else "never"
+        flag = "  <<< STALE" if c.stale else ""
+        typer.echo(f"  {c.component:<12} {c.status:<8} {age}{flag}  {c.detail}")
+    if alert and not rep.ok:
+        get_notifier().critical("Health degraded", "; ".join(rep.problems))
+    raise typer.Exit(code=0 if rep.ok else 1)
+
+
+@app.command()
+def drift(
+    symbol: str,
+    strategy: str = typer.Option("ma_cross", help="strategy name"),
+    params: str = typer.Option("", help="e.g. 'lookback=100'"),
+    start: str = typer.Option("2023-01-01", help="window start for the expected signals"),
+    timeframe: str = typer.Option("1d"),
+    min_agreement: float = typer.Option(0.8, help="flag drift below this backtest/live agreement"),
+    alert: bool = typer.Option(False, "--alert", help="send an alert if drift is detected"),
+) -> None:
+    """Backtest-vs-live drift: do the live runner's actions match what the backtest expected?"""
+    from quant.execution import TradeJournal
+    from quant.ops.drift import decision_drift
+    from quant.ops.notify import get_notifier
+    from quant.strategies.registry import get_strategy_cls
+
+    data = _load(symbol, start, timeframe)
+    strat = get_strategy_cls(strategy)(**_parse_params(params))
+    with TradeJournal() as tj:
+        live_log = tj.live_log(limit=10_000)
+    rep = decision_drift(data, strat, live_log, symbol=symbol, strategy_name=strategy,
+                         min_agreement=min_agreement)
+    typer.echo("\n" + rep.summary())
+    if rep.missed:
+        typer.echo(f"\nmissed (backtest would trade, live didn't): {len(rep.missed)}")
+        for d, a in rep.missed[:10]:
+            typer.echo(f"  {d} {a}")
+    if rep.extra:
+        typer.echo(f"\nextra (live traded, backtest wouldn't): {len(rep.extra)}")
+        for d, a in rep.extra[:10]:
+            typer.echo(f"  {d} {a}")
+    if alert and not rep.ok:
+        get_notifier().warn("Backtest/live drift", rep.summary())
+    raise typer.Exit(code=0 if rep.ok else 1)
+
+
 if __name__ == "__main__":
     app()

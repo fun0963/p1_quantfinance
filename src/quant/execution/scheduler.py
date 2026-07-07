@@ -18,7 +18,9 @@ from datetime import UTC, datetime
 
 from quant.execution.journal import TradeJournal
 from quant.execution.live_runner import LiveDecision, run_live_step
+from quant.ops.health import record_heartbeat
 from quant.ops.notify import get_notifier
+from quant.ops.oms import OMS
 from quant.risk import BracketConfig, FixedFractionRisk, RiskGate, RiskLimits
 from quant.utils import get_logger
 
@@ -84,7 +86,13 @@ def live_and_journal(
             log.warning(f"[schedule] could not read day P&L for {cfg.symbol}: {exc}")
 
     own = journal or TradeJournal()
+    oms = OMS(own)
+    dec: LiveDecision | None = None
     try:
+        # OMS: advance the state of any orders placed on a previous run (async fills
+        # at the broker only become FILLED here). Best-effort — never blocks trading.
+        _oms_sync(oms, broker)
+
         # Fail-safe: reconcile the real book before placing any live order. A CRITICAL
         # mismatch means the system is out of sync — halt and alert, don't trade (P0 #6).
         if not dry_run:
@@ -123,6 +131,12 @@ def live_and_journal(
             raise
         _safe_record(own, dec, cfg.strategy)
 
+        # OMS: track a real placed order through its lifecycle, then sync once so a
+        # synchronous (paper) fill is captured immediately for TCA.
+        if not dry_run and dec.order_id:
+            _oms_submit(oms, dec, cfg.strategy)
+            _oms_sync(oms, broker)
+
         # Outcome alerts: a real order placed (INFO) or a blocked order (WARN).
         if not dry_run and dec.order_id:
             notifier.info(f"{cfg.symbol}: {dec.action} order placed",
@@ -130,6 +144,7 @@ def live_and_journal(
         elif dec.blocked:
             notifier.warn(f"{cfg.symbol}: order blocked", dec.blocked)
     finally:
+        _record_run_heartbeat(own, cfg, dec, dry_run)
         if journal is None:
             own.close()
 
@@ -146,6 +161,49 @@ def _safe_record(journal: TradeJournal, dec: LiveDecision, strategy: str) -> Non
     except Exception as exc:  # noqa: BLE001
         log.critical(f"[schedule] FAILED to journal {dec.action} {dec.symbol} "
                      f"order={dec.order_id}: {exc} — decision was: {dec}")
+
+
+def _oms_sync(oms: OMS, broker) -> None:
+    """Advance broker order states in the OMS. Best-effort — audit, never trading-critical."""
+    try:
+        oms.sync(broker)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[oms] sync failed: {exc}")
+
+
+def _oms_submit(oms: OMS, dec: LiveDecision, strategy: str) -> None:
+    """Record a just-placed order in the OMS. A failure here loses lifecycle/TCA data
+    but not the decision itself (already journaled), so log loudly and continue."""
+    try:
+        oms.on_submit(symbol=dec.symbol, side=dec.action, qty=dec.qty,
+                      intended_price=dec.price, broker_order_id=str(dec.order_id),
+                      strategy=strategy)
+    except Exception as exc:  # noqa: BLE001
+        log.critical(f"[oms] FAILED to record placed order {dec.order_id} "
+                     f"({dec.action} {dec.qty:g} {dec.symbol}): {exc}")
+
+
+def _record_run_heartbeat(journal: TradeJournal, cfg: LiveConfig,
+                          dec: LiveDecision | None, dry_run: bool) -> None:
+    """Stamp a proof-of-life heartbeat for the live run (so a missed run is detectable)."""
+    if dec is None:
+        status, detail = "error", "run produced no decision"
+    elif dec.action == "error":
+        status, detail = "error", dec.reason
+    elif dec.action == "halt" or dec.blocked:
+        status, detail = "warn", (dec.blocked or dec.reason)
+    else:
+        status, detail = "ok", dec.reason
+    meta = {
+        "symbol": cfg.symbol, "strategy": cfg.strategy, "dry_run": dry_run,
+        "action": getattr(dec, "action", None),
+        "bar_ts": str(getattr(dec, "ts", "")),
+        "order_id": getattr(dec, "order_id", None),
+    }
+    try:
+        record_heartbeat(journal, "live", status, detail or "", meta)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[health] failed to record live heartbeat: {exc}")
 
 
 def _is_trading_day(dt: datetime, calendar_name: str = "XNYS") -> bool:
@@ -175,18 +233,29 @@ def run_schedule(
     sched = BlockingScheduler(timezone=tz)
     notifier = get_notifier()
 
+    def _tick_heartbeat(status: str, detail: str) -> None:
+        """Prove the scheduler process itself is alive (distinct from the live run)."""
+        try:
+            with TradeJournal() as tj:
+                record_heartbeat(tj, "scheduler", status, detail, {"tz": tz, "at": at})
+        except Exception as exc:  # noqa: BLE001 - monitoring must never break the loop
+            log.warning(f"[health] failed to record scheduler heartbeat: {exc}")
+
     def _job(c: LiveConfig) -> None:
         # Skip market holidays — cron mon-fri still fires on them, and acting would
         # use the prior session's (now stale) bar.
         if not _is_trading_day(datetime.now(ZoneInfo(tz))):
             log.info(f"[schedule] not a trading day ({tz}) — skipping {c.symbol}/{c.strategy}")
+            _tick_heartbeat("ok", f"holiday skip: {c.symbol}/{c.strategy}")
             return
         try:
             live_and_journal(c, dry_run=dry_run)
+            _tick_heartbeat("ok", f"ran {c.symbol}/{c.strategy}")
         except Exception as exc:  # noqa: BLE001 - one job's failure must not kill the loop
             log.error(f"[schedule] {c.symbol}/{c.strategy} job FAILED: {type(exc).__name__}: {exc}")
             notifier.critical(f"scheduled job {c.symbol}/{c.strategy} FAILED",
                               f"{type(exc).__name__}: {exc}")
+            _tick_heartbeat("error", f"{c.symbol}/{c.strategy}: {type(exc).__name__}: {exc}")
 
     for cfg in configs:
         sched.add_job(

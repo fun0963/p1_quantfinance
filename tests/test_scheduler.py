@@ -42,3 +42,25 @@ def test_live_and_journal_executes_on_paper(tmp_path):
         dec = live_and_journal(cfg, dry_run=False, journal=tj, data=_uptrend(),
                                notifier=NullNotifier())
     assert dec.action == "buy" and dec.order_id is not None
+
+
+def test_execute_records_oms_order_and_heartbeat(tmp_path):
+    """The live path wires OMS + heartbeat: a paper execute yields a FILLED order
+    (synchronous fill, advanced by the in-run sync) and a healthy 'live' heartbeat."""
+    from quant.ops.health import health_check
+    from quant.ops.oms import OrderState
+
+    cfg = LiveConfig(symbol="SPY", strategy="momentum", params={"lookback": 50},
+                     broker="paper", max_bar_age_days=100_000)
+    with TradeJournal(db_path=tmp_path / "j.db") as tj:
+        dec = live_and_journal(cfg, dry_run=False, journal=tj, data=_uptrend(),
+                               notifier=NullNotifier())
+        orders = tj.orders()
+        rep = health_check(tj, expect=("live",))
+
+    assert dec.order_id is not None
+    assert len(orders) == 1
+    assert orders.iloc[0]["status"] == OrderState.FILLED.value      # sync flipped it
+    assert orders.iloc[0]["avg_fill_price"] is not None
+    live = next(c for c in rep.components if c.component == "live")
+    assert live.status == "ok" and not live.stale                    # proof-of-life stamped

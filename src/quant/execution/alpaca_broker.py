@@ -134,6 +134,24 @@ class AlpacaBroker(Broker):
             log.info(f"[paper] cancelled {len(open_ids)} open order(s) on {symbol}")
         return len(open_ids)
 
+    def order_status(self, order_id: str) -> dict | None:
+        """OMS sync surface: the broker's view of one order (status + fill so far).
+
+        Alpaca statuses (e.g. 'filled', 'partially_filled', 'canceled') are returned
+        lower-cased for OMS.map_broker_status; Alpaca is commission-free (0)."""
+        try:
+            o = self._client().get_order_by_id(order_id)
+        except Exception as exc:  # noqa: BLE001 - unknown/expired id -> treat as no info
+            log.warning(f"[paper] order_status({order_id}) failed: {exc}")
+            return None
+        return {
+            "id": str(o.id),
+            "status": str(o.status).split(".")[-1].lower(),  # OrderStatus.FILLED -> 'filled'
+            "filled_qty": float(o.filled_qty or 0),
+            "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
+            "commission": 0.0,
+        }
+
     def day_pnl(self) -> float:
         """Today's P&L (equity − previous close's equity) — feeds the risk gate's
         daily-loss breaker in the live path."""

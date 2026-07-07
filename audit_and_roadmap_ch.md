@@ -24,11 +24,20 @@
 
 ## 🔴 P0 — 開 `--execute` 前**必修**(安全/資金相關)
 
-> ✅ **更新(2026-07-07):Batch 0 + Batch 1(核心)已完成 —— 108 測試綠。**
+> ✅ **更新(2026-07-07):Batch 0 + Batch 1(全部)已完成 —— 130 測試綠。**
 > - **Batch 0**:P0 的 #1~#5、#7、#8 全部修復 + 回歸測試;另修 journal WAL(P1 #17)。
-> - **Batch 1**:**#6 對帳完成** —— 新增 `ops/` 層(告警 Notifier + 對帳 reconcile + 每日報告),
+> - **Batch 1(核心)**:**#6 對帳完成** —— 新增 `ops/` 層(告警 Notifier + 對帳 reconcile + 每日報告),
 >   實盤下單前會**先對帳,發現不一致就停手 + CRITICAL 告警**(fail-safe)。CLI 新增
 >   `quant reconcile / report / alert-test`。細節見第三部分「第 1 批」。
+> - **Batch 1(剩餘,本次完成)**:**OMS 訂單狀態機 + TCA、系統健康 heartbeat/管線監控、
+>   回測 vs 實盤決策偏差** 三項全部落地(對應 M8.3/8.8、M10.2/10.3、M11.2)。新增
+>   `ops/oms.py`(SUBMITTED→FILLED/… 狀態機 + `orders`/`order_events` 入庫 + `sync(broker)`)、
+>   `ops/tca.py`(訊號價 vs 成交價滑價,bps/$ + 手續費 + 成交率)、`ops/health.py`
+>   (heartbeat + 漏跑偵測)、`ops/drift.py`(回測預期進出場 vs 實盤實際動作一致率)。
+>   `live_and_journal` 每次跑會**先 sync 前次掛單、下單後記入 OMS、收尾打 heartbeat**;
+>   排程每次觸發(含假日略過)也打 heartbeat。每日報告已把 OMS/TCA/健康全部整合進去。
+>   CLI 新增 `quant oms [--sync] / tca / health [--alert] / drift [--alert]`。
+>   兩邊 brokers 都加了 `order_status()`(Alpaca 查真實訂單、Paper 同步成交)。
 
 ### 1. Live 會用「過期快取資料」下單,且完全沒有新鮮度檢查
 - **位置**:[loaders.py](src/quant/data/loaders.py)(`load_bars` / `_cache_covers`)+ [live_runner.py:105](src/quant/execution/live_runner.py)
@@ -132,11 +141,11 @@
 | **M4 因子庫** | 🟡 ~15% | journal 記 session | **因子計算框架、因子檢定(IC/RankIC)、實驗記錄(git-hash/參數/資料版本)、研究知識庫** |
 | **M5 回測引擎** | 🟢 ~65% | 雙引擎、walk-forward、compute_metrics(+勝率/Alpha/Beta)、plotly 報告、參數掃描 | **像樣的成本模型、滑價模型、Sortino/Calmar、期權** |
 | **M6 策略/組合** | 🟡 ~45% | BaseStrategy 介面、ma_cross/momentum、portfolio 權重配置 | **策略生命週期(晉升/退場規則)、機會掃描器、波動率倒數/風險平價配置** |
-| **M7 風險管理** | 🟡 ~40% **且有 P0 bug** | RiskGate、部位上限、paper 的 bracket 熔斷 | **live 熔斷失效(P0#5)、對帳(P0#6)、曝險彙總、風控事件完整日誌** |
-| **M8 執行系統** | 🟡 ~35% | Alpaca paper、PaperBroker、market/bracket 下單、live_runner | **OMS 狀態機、每日對帳(P0#6)、斷線重連/災難復原、TCA** |
+| **M7 風險管理** | 🟢 ~65%(P0 已修) | RiskGate、部位上限、paper 的 bracket 熔斷、**live 熔斷已修(P0#5)、對帳(P0#6)** | **曝險彙總、風控事件完整日誌** |
+| **M8 執行系統** | 🟡 ~55% | Alpaca paper、PaperBroker、market/bracket 下單、live_runner、**OMS 狀態機、每日對帳(P0#6)、TCA 滑價分析** | **斷線重連/災難復原、部分成交精修** |
 | **M9 事件/資訊** | ❌ ~5% | `core/events.py` 骨架 | **事件行事曆(財報/除權息/FOMC)、新聞、事件驅動風控** |
-| **M10 監控/告警** | 🟡 ~10% | **Web 儀表盤(唯讀,對應 10.4 一半)** | **告警通道(Telegram/LINE)、heartbeat、管線監控、每日營運報告、備份** |
-| **M11 績效歸因** | ❌ | — | **PnL 歸因、回測 vs 實盤偏差追蹤、人工干預日誌** |
+| **M10 監控/告警** | 🟡 ~45% | **Web 儀表盤(唯讀)、告警通道(Telegram/log)、heartbeat + 漏跑偵測、管線監控、每日營運報告** | **備份/還原、log 轉 JSON、外部 uptime 監控** |
+| **M11 績效歸因** | 🟡 ~25% | **回測 vs 實盤決策偏差追蹤(`ops/drift.py`)** | **PnL 歸因、成本歸因、人工干預日誌** |
 
 ---
 
@@ -164,9 +173,9 @@
 - ✅ **每日對帳**(M8.6,補完 P0 #6):`ops/reconcile.py` —— 比對券商實際部位/掛單 vs journal:
   未追蹤部位(CRITICAL)、無保護部位、孤兒掛單(WARN)。**live 下單前先對帳,不一致就停手**。`quant reconcile`。
 - ✅ **每日營運報告**(M10.5):`ops/report.py` —— 部位/權益/當日下單/被擋/對帳狀態。`quant report [--alert]`。
-- ⬜ **OMS 訂單狀態機 + TCA**(M8.3/8.8):訂單生命週期入庫;訊號價 vs 成交價。**(Batch 1 剩餘)**
-- ⬜ **系統健康 heartbeat + 管線監控**(M10.2/10.3)。**(Batch 1 剩餘)**
-- ⬜ **回測 vs 實盤偏差追蹤**(M11.2)。**(Batch 1 剩餘)**
+- ✅ **OMS 訂單狀態機 + TCA**(M8.3/8.8):訂單生命週期入庫(`orders`/`order_events`);訊號價 vs 成交價滑價分析。**(Batch 1 完成)** → `ops/oms.py`、`ops/tca.py`
+- ✅ **系統健康 heartbeat + 管線監控**(M10.2/10.3):每次跑打 heartbeat + 漏跑/錯誤偵測。**(Batch 1 完成)** → `ops/health.py`
+- ✅ **回測 vs 實盤偏差追蹤**(M11.2):回測預期進出場 vs 實盤實際動作一致率。**(Batch 1 完成)** → `ops/drift.py`
 
 ## 📈 第 2 批:資料完整性(讓研究結論可信)
 

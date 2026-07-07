@@ -40,6 +40,7 @@ class PaperBroker(Broker):
         self._prices: dict[str, float] = {}
         self._book: dict[str, _Holding] = {}
         self.fills: list[Fill] = []
+        self._fills_by_id: dict[str, Fill] = {}   # order id -> Fill (for OMS order_status)
         self._seq = 0
         self.now = None              # current timestamp, stamped onto fills
 
@@ -74,7 +75,9 @@ class PaperBroker(Broker):
 
         self._seq += 1
         oid = f"paper-{self._seq}"
-        self.fills.append(Fill(oid, order.symbol, order.side, order.qty, fill_price, ts=self.now))
+        fill = Fill(oid, order.symbol, order.side, order.qty, fill_price, ts=self.now)
+        self.fills.append(fill)
+        self._fills_by_id[oid] = fill
         log.debug(f"[paper] {order.side.value} {order.qty} {order.symbol} @ {fill_price:.2f}")
         return oid
 
@@ -94,6 +97,15 @@ class PaperBroker(Broker):
 
     def cancel_open_orders(self, symbol: str) -> int:
         return 0
+
+    def order_status(self, order_id: str) -> dict | None:
+        """OMS sync surface: paper fills are synchronous, so a known order is always
+        FILLED at its fill price. Commission = gross * fees (mirrors the fill above)."""
+        f = self._fills_by_id.get(order_id)
+        if f is None:
+            return None
+        return {"id": order_id, "status": "filled", "filled_qty": f.qty,
+                "filled_avg_price": f.price, "commission": f.qty * f.price * self.fees}
 
     # --- helpers ----------------------------------------------------------
     def position_qty(self, symbol: str) -> float:

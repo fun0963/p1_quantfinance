@@ -8,7 +8,10 @@ from datetime import UTC, date, datetime
 
 from quant.execution.base import Broker
 from quant.execution.journal import TradeJournal
+from quant.ops.health import health_check
+from quant.ops.oms import OMS
 from quant.ops.reconcile import reconcile
+from quant.ops.tca import tca_report
 
 
 def daily_report(broker: Broker, journal: TradeJournal, on: date | None = None) -> str:
@@ -16,9 +19,12 @@ def daily_report(broker: Broker, journal: TradeJournal, on: date | None = None) 
     lines = [f"Daily report - {on.isoformat()}"]
 
     # --- account & positions ---
-    positions = broker.get_positions()
-    lines.append("positions: " + (", ".join(
-        f"{p.symbol} {p.qty:g}@{p.avg_price:.2f}" for p in positions) or "none"))
+    try:
+        positions = broker.get_positions()
+        lines.append("positions: " + (", ".join(
+            f"{p.symbol} {p.qty:g}@{p.avg_price:.2f}" for p in positions) or "none"))
+    except Exception as exc:  # noqa: BLE001 - a broker hiccup must not sink the whole report
+        lines.append(f"positions: unavailable ({type(exc).__name__})")
     if hasattr(broker, "account_summary"):
         try:
             s = broker.account_summary()
@@ -40,13 +46,43 @@ def daily_report(broker: Broker, journal: TradeJournal, on: date | None = None) 
         for _, r in blocked.head(5).iterrows():
             lines.append(f"  ! {r['symbol']}: {r['blocked']}")
 
+    # --- open orders (OMS lifecycle) ---
+    try:
+        open_orders = OMS(journal).open_orders()
+        if open_orders:
+            lines.append(f"open orders (OMS): {len(open_orders)}")
+            for o in open_orders[:8]:
+                lines.append(f"  #{o.id} {o.status.value} {o.side} {o.qty:g} {o.symbol}"
+                             f" (filled {o.filled_qty:g})")
+        else:
+            lines.append("open orders (OMS): none")
+    except Exception:  # noqa: BLE001 - report is best-effort
+        pass
+
+    # --- transaction costs (TCA) ---
+    try:
+        tca = tca_report(journal)
+        if tca.n_filled:
+            lines.append(tca.summary())
+    except Exception:  # noqa: BLE001
+        pass
+
     # --- reconciliation ---
-    rep = reconcile(broker, journal)
-    if not rep.issues:
-        lines.append("reconcile: clean")
-    else:
-        lines.append(rep.summary() + ("" if rep.ok else "  <<< CRITICAL"))
-        for i in rep.issues[:8]:
-            lines.append(f"  {i.severity}: {i.detail}")
+    try:
+        rep = reconcile(broker, journal)
+        if not rep.issues:
+            lines.append("reconcile: clean")
+        else:
+            lines.append(rep.summary() + ("" if rep.ok else "  <<< CRITICAL"))
+            for i in rep.issues[:8]:
+                lines.append(f"  {i.severity}: {i.detail}")
+    except Exception as exc:  # noqa: BLE001 - keep the journal-only health section below reachable
+        lines.append(f"reconcile: unavailable ({type(exc).__name__})")
+
+    # --- system health (heartbeats) ---
+    try:
+        lines.append(health_check(journal).summary())
+    except Exception:  # noqa: BLE001
+        pass
 
     return "\n".join(lines)
