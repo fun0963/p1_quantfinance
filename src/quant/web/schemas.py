@@ -16,6 +16,8 @@ class BacktestRequest(BaseModel):
     start: str = "2020-01-01"
     timeframe: str = "1d"
     cash: float = 100_000
+    fees_bps: float = Field(default=5.0, ge=0, description="commission, basis points per side")
+    slippage_bps: float = Field(default=0.0, ge=0, description="adverse slippage, basis points per side")
 
 
 class PortfolioLegIn(BaseModel):

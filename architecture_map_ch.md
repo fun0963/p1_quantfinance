@@ -167,7 +167,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 1. **Batch 2 剩餘 — 資料完整性**(回測可信度命門)
    - 存活者偏差(M1.14):**已做範圍決策 — 圈定不做**(見 §8 #11)。目前聚焦「單標的/ETF 技術面擇時」,此範圍幾乎無存活者偏差;維持 yfinance。**待日後做「跨標的技術面選股/掃描」時才需回頭處理**(換 survivorship-free 資料源)。
    - 原始價 + 調整因子分離存放:才能真正重建 as-of 價格(動到 storage schema)。
-   - ✅ **成本 / 滑價模型(M5.2/5.3,已完成)**:`backtest/costs.py` `CostModel`(fees+slippage);兩引擎 + sweep 支援 slippage;CLI `backtest --slippage-bps / --fees-bps / --calibrate`(`--calibrate` 讀 journal TCA 反推成本,打通 量測→校準→回測 閉環)。預設 slippage=0 保住 golden 回歸。**待補**:web 儀表盤尚未接 slippage 旋鈕。
+   - ✅ **成本 / 滑價模型(M5.2/5.3,已完成)**:`backtest/costs.py` `CostModel`(fees+slippage);兩引擎 + sweep 支援 slippage;CLI `backtest --slippage-bps / --fees-bps / --calibrate`(`--calibrate` 讀 journal TCA 反推成本,打通 量測→校準→回測 閉環);web 儀表盤 backtest 分頁亦接上 slippage 旋鈕並顯示成本行。預設 slippage=0 保住 golden 回歸。
 2. **技術債清理**(見 §8,多為 P1/P2,價值高、風險低)。
 3. **Batch 3 — 研究深化**:因子庫 + 因子檢定(IC/RankIC)、策略生命週期(晉升/退場)、機會掃描器。
 4. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。

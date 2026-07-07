@@ -58,6 +58,7 @@
         <div><label>Params (k=v,k=v)</label><input id="bt-params" placeholder="lookback=100"></div>
         <div><label>Start</label><input id="bt-start" value="2020-01-01"></div>
         <div><label>Cash</label><input id="bt-cash" value="100000"></div>
+        <div><label>Slippage (bps)</label><input id="bt-slippage" value="0"></div>
       </div>
       <button id="bt-run">Run backtest</button>
       <div class="hint" id="bt-grid"></div>
@@ -226,10 +227,11 @@ $("bt-run").onclick=async()=>{
   const btn=$("bt-run"); btn.disabled=true; $("bt-err").textContent="";
   try{
     const body={symbol:$("bt-symbol").value.trim().toUpperCase(),strategy:$("bt-strategy").value,
-      params:parseParams($("bt-params").value),start:$("bt-start").value.trim(),cash:Number($("bt-cash").value)};
+      params:parseParams($("bt-params").value),start:$("bt-start").value.trim(),cash:Number($("bt-cash").value),
+      slippage_bps:Number($("bt-slippage").value)};
     const d=await api("/api/backtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     $("bt-results").style.display="block";
-    $("bt-title").textContent=`${d.strategy} on ${d.symbol} · ${d.bars} bars · ${d.period[0]} → ${d.period[1]}`;
+    $("bt-title").textContent=`${d.strategy} on ${d.symbol} · ${d.bars} bars · ${d.period[0]} → ${d.period[1]} · ${d.cost}`;
     $("bt-metrics").innerHTML=metrics(d.metrics,CORE.concat(BT_EXTRA));
     plotEquity("bt-chart",d.equity,"Equity"); plotDD("bt-dd",d.equity); plotYearly("bt-year",d.yearly_returns);
   }catch(e){$("bt-err").textContent=e.message;} finally{btn.disabled=false;}

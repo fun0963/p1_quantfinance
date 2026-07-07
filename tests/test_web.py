@@ -101,6 +101,19 @@ def test_walkforward_returns_folds_and_summary(monkeypatch):
     assert isinstance(body["folds"], list)
 
 
+def test_backtest_slippage_lowers_equity_and_reports_cost(monkeypatch):
+    import quant.web.routes as routes
+    monkeypatch.setattr(routes, "_load", lambda *a, **k: _uptrend(n=400))
+
+    def run(slip):
+        return client.post("/api/backtest", json={"symbol": "SPY", "strategy": "ma_cross",
+                           "params": {"fast": 5, "slow": 20}, "slippage_bps": slip}).json()
+
+    base, slipped = run(0), run(50)
+    assert "slippage 50.0 bps" in slipped["cost"]                       # cost surfaced + wired
+    assert slipped["metrics"]["final_equity"] < base["metrics"]["final_equity"]
+
+
 def test_500_error_redacts_dsn_password(monkeypatch):
     import quant.web.routes as routes
 

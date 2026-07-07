@@ -88,6 +88,7 @@ def strategies() -> dict:
 
 @router.post("/backtest", summary="Run a backtest (VectorBT) and return metrics + equity curve")
 def backtest(req: BacktestRequest) -> dict:
+    from quant.backtest.costs import CostModel
     from quant.backtest.vectorbt_engine import VectorBTEngine
     from quant.strategies.registry import get_strategy_cls
 
@@ -95,9 +96,11 @@ def backtest(req: BacktestRequest) -> dict:
         strat = get_strategy_cls(req.strategy)(**req.params)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    cost = CostModel(fees=req.fees_bps / 1e4, slippage=req.slippage_bps / 1e4)
     try:
         data = _load(req.symbol, req.start, req.timeframe)
-        res = VectorBTEngine(cash=req.cash).run(strat, data, timeframe=req.timeframe)
+        res = VectorBTEngine(cash=req.cash, fees=cost.fees, slippage=cost.slippage).run(
+            strat, data, timeframe=req.timeframe)
     except Exception as exc:  # data/network/engine failures -> 500 (message redacted)
         raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
@@ -119,6 +122,7 @@ def backtest(req: BacktestRequest) -> dict:
         "params": req.params,
         "bars": int(len(data)),
         "period": [str(data.index[0].date()), str(data.index[-1].date())],
+        "cost": cost.summary(),
         "metrics": metrics,
         "equity": _equity_json(res.equity_curve),
         "yearly_returns": yearly_returns(res.equity_curve),
