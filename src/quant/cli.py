@@ -354,6 +354,8 @@ def backtest(
                                    help="derive fees+slippage from the live journal's TCA history"),
     no_cache: bool = typer.Option(False, "--no-cache", help="force re-download"),
     plot: bool = typer.Option(False, "--plot", help="save an interactive equity/drawdown HTML"),
+    report: bool = typer.Option(False, "--report",
+                                help="save a full HTML tear sheet (metrics + equity + drawdown + monthly)"),
     log_experiment: bool = typer.Option(True, "--log/--no-log",
                                         help="record this run to the experiment store"),
     note: str = typer.Option("", help="free-text note attached to the logged experiment"),
@@ -385,7 +387,8 @@ def backtest(
     typer.echo(f"\n{strat}  on  {symbol}  "
                f"({len(data)} bars, {data.index[0].date()} -> {data.index[-1].date()})")
     typer.echo(cost.summary())
-    keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "max_drawdown_pct", "num_trades"]
+    keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "sortino", "calmar",
+            "max_drawdown_pct", "num_trades"]
     header = f"{'metric':<20}" + "".join(f"{n:>14}" for n in results)
     typer.echo(header)
     typer.echo("-" * len(header))
@@ -409,6 +412,20 @@ def backtest(
         path = plot_equity(results, out_path=f"reports/equity_{symbol}_{strategy}.html",
                            title=f"{strat.name} on {symbol}")
         typer.echo(f"\nEquity/drawdown chart -> {path}")
+
+    if report:
+        from quant.backtest.metrics import trade_stats
+        from quant.backtest.report import build_report
+
+        # Report the primary engine's result (prefer vectorbt if it was run).
+        name = "vectorbt" if "vectorbt" in results else next(iter(results))
+        res = results[name]
+        full = {**res.metrics, **trade_stats(res.trades)}
+        path = build_report(res, symbol=symbol, strategy=strategy, metrics=full,
+                            out_path=f"reports/report_{symbol}_{strategy}.html",
+                            title=f"{strat.name} on {symbol}",
+                            subtitle=f"{name} · {data.index[0].date()} -> {data.index[-1].date()} · {cost.summary()}")
+        typer.echo(f"\nReport -> {path}")
 
 
 @app.command()

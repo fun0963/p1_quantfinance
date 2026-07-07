@@ -109,6 +109,26 @@ def test_backtest_calibrate_from_tca(monkeypatch):
     assert "fees 1.0 bps" in r.output and "slippage 8.0 bps" in r.output
 
 
+def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+
+    import quant.backtest.report as rep
+    captured = {}
+
+    def fake_build(res, *, symbol, strategy, metrics, out_path, title=None, subtitle=""):
+        captured.update(symbol=symbol, metrics=metrics)
+        p = tmp_path / "r.html"
+        p.write_text("x", encoding="utf-8")
+        return p
+
+    monkeypatch.setattr(rep, "build_report", fake_build)
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--engine", "vectorbt", "--report", "--no-log"])
+    assert r.exit_code == 0, r.output
+    assert "Report ->" in r.output
+    assert captured["symbol"] == "SPY" and "sharpe" in captured["metrics"]
+
+
 def test_backtest_logs_experiment_and_experiments_command(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
 

@@ -37,13 +37,24 @@ def compute_metrics(
     std = rets.std()
     sharpe = (rets.mean() / std) * np.sqrt(ppy) if std and std > 0 else np.nan
 
+    # Sortino: like Sharpe but only downside deviation is "risk" (target return 0),
+    # so it doesn't penalize a strategy for large upside moves.
+    downside = np.minimum(rets.to_numpy(), 0.0)
+    dd_dev = float(np.sqrt(np.mean(downside ** 2))) if len(downside) else np.nan
+    sortino = (rets.mean() / dd_dev) * np.sqrt(ppy) if dd_dev and dd_dev > 0 else np.nan
+
     drawdown = eq / eq.cummax() - 1.0
     max_dd = drawdown.min()
+
+    # Calmar: CAGR per unit of worst drawdown — return relative to pain endured.
+    calmar = (cagr / abs(max_dd)) if (max_dd < 0 and not np.isnan(cagr)) else np.nan
 
     return {
         "total_return_pct": round(total_return * 100, 2),
         "cagr_pct": round(cagr * 100, 2) if not np.isnan(cagr) else None,
         "sharpe": round(sharpe, 2) if not np.isnan(sharpe) else None,
+        "sortino": round(sortino, 2) if not np.isnan(sortino) else None,
+        "calmar": round(calmar, 2) if not np.isnan(calmar) else None,
         "max_drawdown_pct": round(max_dd * 100, 2),
         "num_trades": num_trades,
         "final_equity": round(float(eq.iloc[-1]), 2),
@@ -98,3 +109,27 @@ def yearly_returns(equity_curve: pd.Series) -> dict[int, float]:
     years = pd.DatetimeIndex(eq.index).year
     return {int(y): round((g.iloc[-1] / g.iloc[0] - 1) * 100, 2)
             for y, g in eq.groupby(years)}
+
+
+def monthly_returns(equity_curve: pd.Series) -> pd.DataFrame:
+    """Per-month return % as a year x month (1-12) table — the shape a monthly
+    returns heatmap wants. The first month is measured from inception equity;
+    each later month from the previous month-end. Empty frame if too short."""
+    eq = equity_curve.dropna().astype(float)
+    if len(eq) < 2:
+        return pd.DataFrame()
+    if not isinstance(eq.index, pd.DatetimeIndex):
+        eq.index = pd.DatetimeIndex(eq.index)
+
+    month_end = eq.resample("ME").last()
+    prev = month_end.shift(1)
+    prev.iloc[0] = eq.iloc[0]                      # first month vs inception, not NaN
+    rets = (month_end / prev - 1.0) * 100.0
+
+    table: dict[int, dict[int, float]] = {}
+    for ts, r in rets.items():
+        if pd.notna(r):
+            table.setdefault(ts.year, {})[ts.month] = round(float(r), 2)
+    df = pd.DataFrame.from_dict(table, orient="index").reindex(columns=range(1, 13))
+    df.index.name = "year"
+    return df.sort_index()

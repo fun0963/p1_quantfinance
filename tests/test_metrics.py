@@ -5,7 +5,43 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quant.backtest.metrics import alpha_beta, trade_stats, yearly_returns
+from quant.backtest.metrics import (
+    alpha_beta,
+    compute_metrics,
+    monthly_returns,
+    trade_stats,
+    yearly_returns,
+)
+
+
+def test_sortino_and_calmar_present_with_drawdown():
+    idx = pd.date_range("2020-01-01", periods=300, freq="B", tz="UTC")
+    rng = np.random.default_rng(1)
+    eq = pd.Series(100 * np.exp(np.cumsum(rng.normal(0.0005, 0.01, 300))), index=idx)
+    m = compute_metrics(eq)
+    assert isinstance(m["sortino"], float) and isinstance(m["calmar"], float)
+
+
+def test_sortino_calmar_none_without_downside_or_drawdown():
+    idx = pd.date_range("2020-01-01", periods=50, freq="B", tz="UTC")
+    eq = pd.Series(np.linspace(100, 150, 50), index=idx)  # strictly increasing
+    m = compute_metrics(eq)
+    assert m["sortino"] is None   # no downside deviation
+    assert m["calmar"] is None    # no drawdown
+
+
+def test_monthly_returns_table_shape_and_coverage():
+    idx = pd.date_range("2021-01-01", "2021-03-31", freq="D", tz="UTC")
+    eq = pd.Series(np.linspace(100, 130, len(idx)), index=idx)
+    mret = monthly_returns(eq)
+    assert list(mret.index) == [2021]
+    assert list(mret.columns) == list(range(1, 13))
+    assert mret.loc[2021, [1, 2, 3]].notna().all()               # Jan-Mar populated
+    assert mret.loc[2021, list(range(4, 13))].isna().all()       # rest blank
+
+
+def test_monthly_returns_empty_when_too_short():
+    assert monthly_returns(pd.Series([100.0])).empty
 
 
 def test_trade_stats_win_rate_payoff_profit_factor():
