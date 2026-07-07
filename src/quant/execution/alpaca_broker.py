@@ -6,6 +6,8 @@ while the system is still under construction.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from config import get_settings
 from quant.core.types import Order, OrderSide
 from quant.execution.base import Broker, Position
@@ -66,10 +68,16 @@ class AlpacaBroker(Broker):
             raise RuntimeError("ALPACA_API_KEY not set — see .env.example")
         self._key = s.alpaca_api_key
         self._secret = s.alpaca_secret_key
+        self._cached_client: Any = None
 
     def _client(self):
-        from alpaca.trading.client import TradingClient
-        return TradingClient(self._key, self._secret, paper=True)
+        # Reuse one TradingClient per broker: it holds the HTTP session/connection
+        # pool, so rebuilding it on every call adds latency and rate-limit pressure
+        # under a tight scheduler loop.
+        if self._cached_client is None:
+            from alpaca.trading.client import TradingClient
+            self._cached_client = TradingClient(self._key, self._secret, paper=True)
+        return self._cached_client
 
     def submit_order(self, order: Order) -> str:
         from alpaca.trading.enums import OrderSide as AlpacaSide
