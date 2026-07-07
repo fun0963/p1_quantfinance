@@ -57,6 +57,26 @@ def test_vectorbt_metrics_match_golden(key):
     assert res.metrics["final_equity"] == pytest.approx(expected["final_equity"], abs=0.01)
 
 
+def test_backtrader_fills_per_trade_records():
+    """The Backtrader engine used to return trades=None; it now emits a per-trade
+    table (for TCA / trade_stats) shaped like the VectorBT one (a 'PnL' column)."""
+    from quant.backtest.metrics import trade_stats
+
+    strat = get_strategy_cls("ma_cross")(fast=10, slow=30)
+    res = BacktraderEngine(cash=100_000).run(strat, _fixture())
+
+    assert res.trades is not None
+    assert len(res.trades) == res.metrics["num_trades"] > 0
+    for col in ["entry_time", "exit_time", "entry_price", "bars_held", "pnl", "PnL", "commission"]:
+        assert col in res.trades.columns
+    assert (res.trades["exit_time"] >= res.trades["entry_time"]).all()
+
+    # Same 'PnL' column trade_stats already uses for VectorBT -> stats populate.
+    stats = trade_stats(res.trades)
+    assert "win_rate_pct" in stats
+    assert stats["num_wins"] + stats["num_losses"] <= len(res.trades)
+
+
 def test_dual_engines_agree():
     """VectorBT and Backtrader must stay in lockstep (cheat-on-close) — the residual
     gap is execution modeling only. Locks the core dual-engine invariant."""

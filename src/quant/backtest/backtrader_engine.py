@@ -50,8 +50,13 @@ def _build_feed(data: pd.DataFrame, signals: pd.DataFrame):
     return _SignalData(dataname=merged)
 
 
-def _make_strategy_cls(target_pct: float, equity_log: list):
-    """A bt.Strategy that trades the precomputed entries/exits lines."""
+def _make_strategy_cls(target_pct: float, equity_log: list, trades_log: list):
+    """A bt.Strategy that trades the precomputed entries/exits lines.
+
+    `equity_log` collects (datetime, value) each bar; `trades_log` collects one
+    dict per *closed* trade so the engine can return a per-trade table (for TCA
+    and trade_stats), matching what the VectorBT engine already provides.
+    """
     import backtrader as bt
 
     class _BridgeStrategy(bt.Strategy):
@@ -61,6 +66,21 @@ def _make_strategy_cls(target_pct: float, equity_log: list):
                 self.order_target_percent(target=target_pct)
             elif self.data.exits[0] > 0 and self.position:
                 self.close()
+
+        def notify_trade(self, trade):
+            if not trade.isclosed:
+                return
+            # PnL uses pnlcomm (net of commission) so win-rate/payoff line up with
+            # VectorBT's 'PnL' column; gross pnl and commission are kept alongside.
+            trades_log.append({
+                "entry_time": bt.num2date(trade.dtopen),
+                "exit_time": bt.num2date(trade.dtclose),
+                "entry_price": round(float(trade.price), 4),
+                "bars_held": int(trade.barlen),
+                "pnl": round(float(trade.pnl), 4),
+                "PnL": round(float(trade.pnlcomm), 4),
+                "commission": round(float(trade.commission), 4),
+            })
 
     return _BridgeStrategy
 
@@ -81,8 +101,9 @@ class BacktraderEngine(BacktestEngine):
         log.info(f"Running {strategy} on backtrader ({len(data)} bars)")
 
         equity_log: list[tuple] = []
+        trades_log: list[dict] = []
         cerebro = bt.Cerebro()
-        cerebro.addstrategy(_make_strategy_cls(self.target_pct, equity_log))
+        cerebro.addstrategy(_make_strategy_cls(self.target_pct, equity_log, trades_log))
         cerebro.adddata(_build_feed(data, signals))
         cerebro.broker.setcash(self.cash)
         cerebro.broker.setcommission(commission=self.fees)
@@ -91,16 +112,22 @@ class BacktraderEngine(BacktestEngine):
 
         results = cerebro.run()
         trade_ana = results[0].analyzers.trades.get_analysis()
-        num_trades = int(trade_ana.get("total", {}).get("closed", 0))
 
         equity = pd.Series(
             {ts: val for ts, val in equity_log}, name="equity"
         ).sort_index()
 
+        # Per-trade table (was None): entry/exit time+price, bars held, net/gross PnL.
+        trades = pd.DataFrame(
+            trades_log,
+            columns=["entry_time", "exit_time", "entry_price", "bars_held",
+                     "pnl", "PnL", "commission"],
+        )
+
         return BacktestResult(
             equity_curve=equity,
-            metrics=compute_metrics(equity, num_trades=num_trades, timeframe=timeframe),
+            metrics=compute_metrics(equity, num_trades=len(trades), timeframe=timeframe),
             stats=dict(trade_ana),
-            trades=None,
+            trades=trades,
             engine=self.name,
         )
