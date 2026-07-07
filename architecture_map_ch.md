@@ -165,7 +165,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 ### ⬜ 接下來(依優先序)
 
 1. **Batch 2 剩餘 — 資料完整性**(回測可信度命門)
-   - 存活者偏差(M1.14):需下市標的名單 / as-of 宇宙 → **卡在資料源決策**(yfinance 抓不到下市資料,可能要換付費源)。
+   - 存活者偏差(M1.14):**已做範圍決策 — 圈定不做**(見 §8 #11)。目前聚焦「單標的/ETF 技術面擇時」,此範圍幾乎無存活者偏差;維持 yfinance。**待日後做「跨標的技術面選股/掃描」時才需回頭處理**(換 survivorship-free 資料源)。
    - 原始價 + 調整因子分離存放:才能真正重建 as-of 價格(動到 storage schema)。
    - 成本 / 滑價模型(M5.2/5.3):真實化回測,用 paper 的 TCA 校準。
 2. **技術債清理**(見 §8,多為 P1/P2,價值高、風險低)。
@@ -190,6 +190,9 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | ~~8~~ | ✅ **AlpacaBroker 快取 client** | `execution/alpaca_broker.py` | 已修:`_client()` 改每個 broker 實例 lazy 快取一個 `TradingClient`(保留 HTTP 連線池),不再每次呼叫重建 |
 | ~~9~~ | ✅ **補測試缺口** | `tests/test_config.py`、`tests/test_cli.py` | 已修:新增 `test_config.py`(Settings 預設/env 覆蓋/lru_cache/ensure_dirs,hermetic)+ `test_cli.py`(parse 輔助單元 + `info`/`backtest` 經 CliRunner 端到端)。`asyncio_mode` 警告早已在 pyproject 設 `auto` 解決(該註記過時) |
 | ~~10~~ | ✅ **引擎可注入** | `backtest/walkforward.py`、`portfolio/portfolio.py`、`cli.py` | 已修:兩者新增 `engine_cls: type[BacktestEngine]=VectorBTEngine`;CLI `walkforward`/`portfolio` 接 `--engine`。walk_forward OOS 切片前正規化 tz(Backtrader 回 tz-naive);ABC `BacktestEngine.run` 補上 `timeframe` 契約。sweep 最佳化仍固定 VectorBT(向量化本是它的強項) |
+| 11 | 🟠 **存活者偏差 — 已知並圈定範圍(不做)** | 資料源(`feeds/yfinance_feed.py`);未來的宇宙/掃描層 | **範圍決策(2026-07-07)**:維持 yfinance,聚焦單標的/ETF 技術面擇時,此範圍幾乎無存活者偏差,故**刻意不做**校正。⚠️ **觸發條件**:一旦要做「跨標的技術面選股 / 機會掃描器」(橫截面選股),存活者偏差 + point-in-time 宇宙成分偏差會讓那類回測**系統性高估、結論不可信** → 屆時必須(a)換 survivorship-free 資料源(Norgate / Sharadar 等,含下市標的 + 歷史成分),並(b)先建 `Universe`/`as_of_universe(date)` 抽象。**在此之前不得建任何跨標的掃描回測**。詳細分析見對話紀錄 2026-07-07 |
+
+> **§8 進度**:#1–4、6–10 已修;#5 won't-fix(安全設計);#11 已知並圈定範圍(依產品方向刻意不做,附觸發條件)。
 
 ---
 
