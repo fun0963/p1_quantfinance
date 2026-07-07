@@ -109,6 +109,37 @@ class AlpacaBroker(Broker):
                  f"-> {resp.id}")
         return str(resp.id)
 
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        """Not-yet-filled orders (for reconciliation — Alpaca fills asynchronously,
+        so a just-submitted order is invisible to get_positions until it fills)."""
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        req = GetOrdersRequest(status=QueryOrderStatus.OPEN,
+                               symbols=[symbol] if symbol else None)
+        return [
+            {"id": str(o.id), "symbol": o.symbol, "side": str(o.side).lower(),
+             "qty": float(o.qty or 0)}
+            for o in self._client().get_orders(filter=req)
+        ]
+
+    def cancel_open_orders(self, symbol: str) -> int:
+        """Cancel all open orders for `symbol` (e.g. the OCO legs holding shares
+        before a strategy exit can sell). Returns how many were cancelled."""
+        client = self._client()
+        open_ids = [o["id"] for o in self.get_open_orders(symbol)]
+        for oid in open_ids:
+            client.cancel_order_by_id(oid)
+        if open_ids:
+            log.info(f"[paper] cancelled {len(open_ids)} open order(s) on {symbol}")
+        return len(open_ids)
+
+    def day_pnl(self) -> float:
+        """Today's P&L (equity − previous close's equity) — feeds the risk gate's
+        daily-loss breaker in the live path."""
+        acct = self._client().get_account()
+        return float(acct.equity) - float(acct.last_equity)
+
     def get_positions(self) -> list[Position]:
         return [
             Position(symbol=p.symbol, qty=float(p.qty), avg_price=float(p.avg_entry_price))

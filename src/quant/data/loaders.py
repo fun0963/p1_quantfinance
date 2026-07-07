@@ -26,14 +26,26 @@ def _cache_covers(first_bar: date, start: date) -> bool:
     return (first_bar - start).days <= _CACHE_START_TOLERANCE_DAYS
 
 
+def _cache_fresh(last_bar: date, now: date, max_staleness_days: int) -> bool:
+    """Whether a cache whose newest bar is `last_bar` is recent enough (used by the
+    live path so it never trades on a stale cache — see max_staleness_days)."""
+    return (now - last_bar).days <= max_staleness_days
+
+
 def load_bars(
     symbol: str,
     feed: DataFeed,
     start: datetime | None = None,
     timeframe: str = "1d",
     use_cache: bool = True,
+    max_staleness_days: int | None = None,
 ) -> pd.DataFrame:
-    """Return OHLCV bars from `start` onward, served from cache when it covers the range."""
+    """Return OHLCV bars from `start` onward, served from cache when it covers the range.
+
+    `max_staleness_days`: if set, a cache whose newest bar is older than this many
+    days is re-downloaded rather than served — the live path passes a small value so
+    it never decides on a stale cache. Leave None for research (cache is fine).
+    """
     store = get_store()
     start = start or datetime(2020, 1, 1, tzinfo=UTC)
 
@@ -41,13 +53,21 @@ def load_bars(
         cached = store.load(symbol, timeframe)
         if cached is not None and not cached.empty:
             # Compare on calendar date to sidestep tz-aware/naive index mismatches.
-            if _cache_covers(cached.index[0].date(), start.date()):
+            covers = _cache_covers(cached.index[0].date(), start.date())
+            fresh = (max_staleness_days is None or
+                     _cache_fresh(cached.index[-1].date(), datetime.now(UTC).date(),
+                                  max_staleness_days))
+            if covers and fresh:
                 log.debug(f"cache hit {symbol} {timeframe} (first bar {cached.index[0].date()}, "
                           f"requested {start.date()})")
                 return _slice_from(cached, start)  # honor the requested start
-            gap = (cached.index[0].date() - start.date()).days
-            log.info(f"cache for {symbol} starts {cached.index[0].date()}, {gap}d after "
-                     f"requested {start.date()} — re-downloading for earlier history")
+            if not covers:
+                gap = (cached.index[0].date() - start.date()).days
+                log.info(f"cache for {symbol} starts {cached.index[0].date()}, {gap}d after "
+                         f"requested {start.date()} — re-downloading for earlier history")
+            else:
+                log.info(f"cache for {symbol} newest bar {cached.index[-1].date()} older than "
+                         f"{max_staleness_days}d — re-downloading for freshness")
 
     df = feed.get_history(symbol, start=start, timeframe=timeframe)
     store.save(symbol, timeframe, df)  # cache the full pull; callers get the sliced view

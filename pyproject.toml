@@ -25,6 +25,7 @@ dependencies = [
     "loguru>=0.7",              # logging
     "typer>=0.12",              # CLI entrypoint
     "apscheduler>=3.10",        # scheduling / event loop
+    "pandas-market-calendars>=4.4",  # trading-day calendar (skip market holidays in live)
 ]
 
 [project.optional-dependencies]

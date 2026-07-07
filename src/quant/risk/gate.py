@@ -62,6 +62,14 @@ class RiskGate:
         if not lim.enabled:
             return None
 
+        # Risk-REDUCING orders (shrinking the absolute position) must always be
+        # allowed to pass the automated numeric limits — you must be able to cut
+        # risk even when the daily-loss breaker or a position cap has tripped.
+        # Only the manual kill switch (above) stops them.
+        signed = order.qty if order.side is OrderSide.BUY else -order.qty
+        if abs(current_position_qty + signed) < abs(current_position_qty):
+            return None
+
         if lim.max_order_qty and order.qty > lim.max_order_qty:
             return f"order qty {order.qty} exceeds per-order cap {lim.max_order_qty}"
 

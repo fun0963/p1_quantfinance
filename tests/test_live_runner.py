@@ -1,6 +1,8 @@
 """Tests for the live runner — latest-bar decision, dry-run vs execute, gate, reconcile."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pandas as pd
 
 from quant.core.types import Order, OrderSide, OrderType
@@ -142,3 +144,53 @@ def test_target_mode_holds_when_already_aligned_long():
     assert dec.target_state == "long"
     assert dec.action == "hold" and dec.order_id is None
     assert brk.position_qty("SPY") == 50
+
+
+# --- P0 safety fixes ---------------------------------------------------------
+
+def test_freshness_gate_blocks_stale_bars():
+    # Latest bar is ~30 days before "now" → must refuse to act (P0 #1).
+    brk = PaperBroker(cash=100_000)
+    dec = run_live_step(_LastBar(entry_last=True), _data(), "SPY", brk, dry_run=False,
+                        now=datetime(2024, 3, 1, tzinfo=UTC), max_bar_age_days=4)
+    assert dec.blocked is not None and "stale" in dec.blocked
+    assert dec.order_id is None and brk.position_qty("SPY") == 0
+
+
+def test_no_signal_does_not_liquidate_a_held_position():
+    # The dangerous case (P0 #3): strategy emits NOTHING (all-False) while we hold.
+    # Must HOLD, never read "no signal" as target-flat and sell.
+    brk = PaperBroker(cash=100_000)
+    brk.mark("SPY", 100.0)
+    brk.submit_order(Order("SPY", OrderSide.BUY, qty=100, type=OrderType.MARKET))
+    dec = run_live_step(_LastBar(), _data(), "SPY", brk, dry_run=False, mode="target")
+    assert dec.target_state == "no signal (hold)"
+    assert dec.action == "hold" and brk.position_qty("SPY") == 100
+
+
+def test_exit_cancels_protective_orders_before_selling():
+    # P0 #4: an open OCO holds the shares; the exit must cancel it first.
+    cancelled = []
+
+    class _Brk(PaperBroker):
+        def cancel_open_orders(self, symbol):
+            cancelled.append(symbol)
+            return 1
+
+    brk = _Brk(cash=100_000)
+    brk.mark("SPY", 100.0)
+    brk.submit_order(Order("SPY", OrderSide.BUY, qty=100, type=OrderType.MARKET))
+    dec = run_live_step(_LastBar(exit_last=True), _data(), "SPY", brk, dry_run=False)
+    assert dec.action == "sell" and cancelled == ["SPY"]
+
+
+def test_open_buy_blocks_a_second_entry():
+    # P0 #2: an unfilled BUY already exists → don't double up.
+    class _Brk(PaperBroker):
+        def get_open_orders(self, symbol=None):
+            return [{"symbol": "SPY", "side": "buy", "qty": 10}]
+
+    brk = _Brk(cash=100_000)
+    dec = run_live_step(_LastBar(entry_last=True), _data(), "SPY", brk, dry_run=False)
+    assert dec.order_id is None and "already exists" in dec.reason
+    assert brk.position_qty("SPY") == 0

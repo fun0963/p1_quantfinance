@@ -109,8 +109,10 @@ class _ScriptedStrategy(MACrossStrategy):
         return pd.DataFrame({"entries": entries, "exits": exits}, index=data.index)
 
 
-def test_daily_loss_killswitch_fires_on_single_day_crash():
-    # Hold a big position into a -40% day; the daily-loss gate must block the exit.
+def test_daily_loss_breaker_allows_protective_exit():
+    # Hold a big position into a -40% day with a tight daily-loss breaker. The breaker
+    # must NOT block the exit — cutting risk must always be possible (P0 #5). That a new
+    # ENTRY is still blocked when the breaker trips is covered in test_gate.py.
     idx = pd.date_range("2022-01-03", periods=4, freq="D", tz="UTC")
     close = pd.Series([100.0, 100.0, 60.0, 60.0], index=idx)
     data = pd.DataFrame(
@@ -120,4 +122,6 @@ def test_daily_loss_killswitch_fires_on_single_day_crash():
     gate = RiskGate(RiskLimits(max_daily_loss=10_000))
     res = run_paper_session(_ScriptedStrategy(fast=2, slow=3), data, "SPY", gate=gate)
 
-    assert any("daily loss" in reason for _, reason in res.blocked)
+    # The exit fired and closed the position despite the tripped breaker.
+    assert any(f.side is OrderSide.SELL for f in res.fills)
+    assert all(abs(p.qty) < 1e-9 for p in res.final_positions)

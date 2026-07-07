@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 
 import pandas as pd
 
-from quant.data.loaders import _cache_covers, _slice_from
+from quant.data.loaders import _cache_covers, _cache_fresh, _slice_from
 
 
 def _frame(tz):
@@ -42,3 +42,10 @@ def test_cache_covers_exact_and_nontrading_gap():
 def test_cache_does_not_cover_genuinely_missing_history():
     # Cache starts a full year after the request -> re-download to get earlier bars.
     assert not _cache_covers(date(2021, 1, 1), date(2020, 1, 1))
+
+
+def test_cache_freshness_tolerance():
+    # last bar 1 day before "now", tolerance 1 -> still fresh
+    assert _cache_fresh(date(2024, 1, 10), date(2024, 1, 11), 1)
+    # last bar 10 days old, tolerance 3 -> stale (live must re-download)
+    assert not _cache_fresh(date(2024, 1, 1), date(2024, 1, 11), 3)

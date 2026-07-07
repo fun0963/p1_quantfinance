@@ -85,6 +85,16 @@ class PaperBroker(Broker):
     def get_cash(self) -> float:
         return self._cash
 
+    # --- reconciliation surface (parity with AlpacaBroker) ----------------
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        """PaperBroker fills market orders synchronously, so there are never any
+        pending orders — always empty. Present for interface parity with the live
+        path's open-order / cancel-before-exit logic."""
+        return []
+
+    def cancel_open_orders(self, symbol: str) -> int:
+        return 0
+
     # --- helpers ----------------------------------------------------------
     def position_qty(self, symbol: str) -> float:
         h = self._book.get(symbol)

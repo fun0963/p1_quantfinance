@@ -16,6 +16,7 @@ live mode are a follow-up — the intended path is Alpaca's native bracket order
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -55,19 +56,52 @@ def _position_qty(broker: Broker, symbol: str) -> float:
     return 0.0
 
 
-def _target_state(signals: pd.DataFrame) -> int:
-    """Desired long-only position as of the LATEST bar: 1 = long, 0 = flat.
+def _target_state(signals: pd.DataFrame) -> int | None:
+    """Desired long-only position as of the LATEST bar: 1 = long, 0 = flat,
+    or **None = no opinion** (the strategy never signalled anything in the window).
 
     Replays the boolean entries/exits into a held state (entry→long, exit→flat,
-    forward-filled), so the runner can reconcile to the strategy's *intended*
-    position rather than only firing on the exact crossover bar. This is what
-    keeps a once-a-day live run in sync even if it starts mid-trend or skips a day.
+    forward-filled), so the runner reconciles to the strategy's *intended* position
+    rather than only firing on the crossover bar.
+
+    Critical: if there are NO entries and NO exits at all (indicators still warming
+    up, too little data, or a bug producing an all-False frame), we return None so
+    the caller HOLDS — an empty signal frame must never be read as "target flat" and
+    used to liquidate a real position.
     """
+    entries = signals["entries"].astype(bool)
+    exits = signals["exits"].astype(bool)
+    if not (entries.any() or exits.any()):
+        return None
     marks = pd.Series(float("nan"), index=signals.index)
-    marks[signals["entries"].astype(bool)] = 1.0
-    marks[signals["exits"].astype(bool)] = 0.0   # exit wins if a bar somehow has both
+    marks[entries] = 1.0
+    marks[exits] = 0.0   # exit wins if a bar somehow has both
     state = marks.ffill().fillna(0.0)
     return int(state.iloc[-1])
+
+
+def _has_open_buy(broker: Broker, symbol: str) -> bool:
+    """Whether an as-yet-unfilled BUY for `symbol` already exists at the broker —
+    prevents a second entry firing before the first async fill updates the position."""
+    if not hasattr(broker, "get_open_orders"):
+        return False
+    try:
+        return any(str(o.get("side", "")).lower() == "buy"
+                   for o in broker.get_open_orders(symbol))
+    except Exception as exc:  # noqa: BLE001 - reconciliation must not crash the step
+        log.warning(f"[live] could not check open orders for {symbol}: {exc}")
+        return False
+
+
+def _cancel_protection(broker: Broker, symbol: str) -> None:
+    """Cancel any open orders (e.g. OCO stop/take legs) holding the shares, so a
+    strategy exit sell isn't rejected by the broker for insufficient quantity."""
+    if not hasattr(broker, "cancel_open_orders"):
+        return
+    try:
+        broker.cancel_open_orders(symbol)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[live] could not cancel protective orders on {symbol}: {exc}")
 
 
 def run_live_step(
@@ -80,6 +114,8 @@ def run_live_step(
     dry_run: bool = True,
     mode: str = "target",
     bracket_cfg: BracketConfig | None = None,
+    now: datetime | None = None,
+    max_bar_age_days: int | None = None,
 ) -> LiveDecision:
     """Evaluate the latest bar and act once. Broker positions are the truth.
 
@@ -113,13 +149,30 @@ def run_live_step(
     dec = LiveDecision(ts=ts, symbol=symbol, action="hold" if pos > 0 else "flat",
                        price=price, dry_run=dry_run, position_before=pos)
 
+    # Freshness gate: never act on a stale bar. If the latest bar is older than
+    # max_bar_age_days (accounting for weekends/holidays), refuse — this is the
+    # safety net against a cached run deciding on week-old data.
+    if max_bar_age_days is not None:
+        age = ((now or datetime.now(UTC)).date() - ts.date()).days
+        if age > max_bar_age_days:
+            dec.reason = (f"stale data: latest bar {ts.date()} is {age}d old "
+                          f"(> {max_bar_age_days}d) — not acting")
+            dec.blocked = dec.reason
+            log.warning(f"[live] {symbol} BLOCKED: {dec.reason}")
+            return dec
+
     if mode == "target":
         target = _target_state(signals)
-        dec.target_state = "long" if target == 1 else "flat"
-        want_entry = target == 1 and pos == 0
-        want_exit = target == 0 and pos > 0
-        entry_why = f"target long, currently flat -> enter (last bar {ts.date()})"
-        exit_why = "target flat, currently long -> exit"
+        if target is None:
+            dec.target_state = "no signal (hold)"
+            want_entry = want_exit = False
+            entry_why = exit_why = ""
+        else:
+            dec.target_state = "long" if target == 1 else "flat"
+            want_entry = target == 1 and pos == 0
+            want_exit = target == 0 and pos > 0
+            entry_why = f"target long, currently flat -> enter (last bar {ts.date()})"
+            exit_why = "target flat, currently long -> exit"
     else:  # signal mode
         want_entry = bool(signals["entries"].iloc[-1]) and pos == 0
         want_exit = bool(signals["exits"].iloc[-1]) and pos > 0
@@ -157,6 +210,12 @@ def run_live_step(
         log.info(f"[live] {action} {order.qty} {symbol} -> order {dec.order_id}")
 
     if want_entry:
+        # Don't fire a second entry while a prior BUY is still unfilled (async fills
+        # mean the position query can still read flat right after a submit).
+        if _has_open_buy(broker, symbol):
+            dec.reason = "entry skipped: an unfilled BUY for this symbol already exists"
+            log.info(f"[live] {symbol} {dec.reason}")
+            return dec
         signal = Signal(symbol=symbol, timestamp=ts, type=SignalType.ENTRY_LONG)
         order = risk_manager.size(signal, price, broker.get_cash())
         if order is not None:
@@ -173,6 +232,10 @@ def run_live_step(
                 order = replace(order, qty=float(whole))
             _submit(order, "buy", entry_why, bracket=bracket)
     elif want_exit:
+        # Cancel any protective OCO legs first (they hold the shares); otherwise the
+        # exit sell is rejected for insufficient quantity. Only when really trading.
+        if not dry_run:
+            _cancel_protection(broker, symbol)
         order = Order(symbol=symbol, side=OrderSide.SELL, qty=pos, type=OrderType.MARKET)
         _submit(order, "sell", exit_why)
 

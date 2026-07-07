@@ -83,8 +83,12 @@ class TradeJournal:
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.path = Path(db_path) if db_path else get_settings().data_dir / "journal.db"
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path))
+        # WAL + a busy timeout so concurrent access (web + CLI + scheduler) doesn't
+        # raise "database is locked" and drop an audit record of an order.
+        self.conn = sqlite3.connect(str(self.path), timeout=30.0)
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
+        self.conn.execute("PRAGMA busy_timeout = 30000")
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
 

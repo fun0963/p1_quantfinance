@@ -20,7 +20,7 @@ def _uptrend(n=200, seed=1):
 
 def test_live_and_journal_records_decision(tmp_path):
     cfg = LiveConfig(symbol="SPY", strategy="momentum", params={"lookback": 50},
-                     broker="paper")
+                     broker="paper", max_bar_age_days=100_000)  # off: synthetic 2023 data
     with TradeJournal(db_path=tmp_path / "j.db") as tj:
         dec = live_and_journal(cfg, dry_run=True, journal=tj, data=_uptrend())
         rows = tj.live_log()
@@ -35,7 +35,7 @@ def test_live_and_journal_records_decision(tmp_path):
 
 def test_live_and_journal_executes_on_paper(tmp_path):
     cfg = LiveConfig(symbol="SPY", strategy="momentum", params={"lookback": 50},
-                     broker="paper")
+                     broker="paper", max_bar_age_days=100_000)  # off: synthetic 2023 data
     with TradeJournal(db_path=tmp_path / "j.db") as tj:
         dec = live_and_journal(cfg, dry_run=False, journal=tj, data=_uptrend())
     assert dec.action == "buy" and dec.order_id is not None

@@ -119,6 +119,7 @@ def live(
     cash: float = typer.Option(100_000, help="starting cash for the paper broker"),
     fraction: float = typer.Option(0.95, help="fraction of cash per entry"),
     max_position_notional: float = typer.Option(0, help="position value cap (0=off)"),
+    max_daily_loss: float = typer.Option(0, help="daily-loss breaker (0=off); blocks NEW risk, not exits"),
     stop_loss: float = typer.Option(0, help="bracket stop %% below entry, e.g. 0.05 (needs --take-profit)"),
     take_profit: float = typer.Option(0, help="bracket take %% above entry, e.g. 0.15 (needs --stop-loss)"),
     execute: bool = typer.Option(False, "--execute",
@@ -130,7 +131,7 @@ def live(
     cfg = LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
                      start=start, timeframe=timeframe, broker=broker, mode=mode,
                      fraction=fraction, max_position_notional=max_position_notional,
-                     stop_loss=stop_loss, take_profit=take_profit)
+                     max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
     dec = live_and_journal(cfg, dry_run=not execute)
 
     label = "EXECUTE" if execute else "DRY-RUN"
@@ -162,6 +163,7 @@ def schedule(
     mode: str = typer.Option("target"),
     fraction: float = typer.Option(0.95),
     max_position_notional: float = typer.Option(0),
+    max_daily_loss: float = typer.Option(0, help="daily-loss breaker (0=off); blocks NEW risk, not exits"),
     stop_loss: float = typer.Option(0, help="bracket stop %% (needs --take-profit)"),
     take_profit: float = typer.Option(0, help="bracket take %% (needs --stop-loss)"),
     at: str = typer.Option("16:10", help="HH:MM to run each day"),
@@ -180,7 +182,7 @@ def schedule(
     cfg = LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
                      start=start, timeframe=timeframe, broker=broker, mode=mode,
                      fraction=fraction, max_position_notional=max_position_notional,
-                     stop_loss=stop_loss, take_profit=take_profit)
+                     max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
     label = "EXECUTE" if execute else "DRY-RUN"
     typer.echo(f"[SCHEDULE {label}] {strategy} on {symbol} (broker={broker}) "
                f"at {at} {days} {tz}")
