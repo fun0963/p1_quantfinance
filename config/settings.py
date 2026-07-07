@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         alias="TIMESCALE_DSN",
     )
 
+    # --- Alerting (ops layer) ---
+    # When alerts are enabled AND both Telegram fields are set, alerts go to
+    # Telegram; otherwise they fall back to the log. Get a token from @BotFather.
+    alerts_enabled: bool = Field(default=True, alias="ALERTS_ENABLED")
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
+
     def ensure_dirs(self) -> None:
         """Create runtime directories if missing."""
         self.data_dir.mkdir(parents=True, exist_ok=True)

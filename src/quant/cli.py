@@ -84,6 +84,15 @@ def _load(symbol: str, start: str, timeframe: str, no_cache: bool = False):
                      use_cache=not no_cache)
 
 
+def _live_broker(broker: str):
+    """Build a broker for the ops commands (alpaca real-paper, or the sim)."""
+    if broker == "paper":
+        from quant.execution import PaperBroker
+        return PaperBroker()
+    from quant.execution.alpaca_broker import AlpacaBroker
+    return AlpacaBroker()
+
+
 # --- commands ---------------------------------------------------------------
 @app.callback()
 def _init() -> None:
@@ -596,6 +605,56 @@ def web(
     typer.echo(f"API docs  : http://{host}:{port}/docs")
     typer.echo("read-only — no order routing here (live trading stays in the CLI). Ctrl+C to stop.")
     uvicorn.run("quant.web.app:app", host=host, port=port, reload=reload)
+
+
+@app.command()
+def reconcile(
+    broker: str = typer.Option("alpaca", help="alpaca | paper"),
+    alert: bool = typer.Option(False, "--alert", help="also send an alert on any issue"),
+) -> None:
+    """Reconcile the broker's book against the journal (untracked/unprotected/orphan)."""
+    from quant.execution import TradeJournal
+    from quant.ops.notify import get_notifier
+    from quant.ops.reconcile import reconcile as run_reconcile
+
+    brk = _live_broker(broker)
+    with TradeJournal() as tj:
+        rep = run_reconcile(brk, tj)
+    typer.echo(f"\n{rep.summary()}  (checked {rep.checked_at})")
+    typer.echo("positions: " + (", ".join(f"{k} {v:g}" for k, v in rep.positions.items()) or "none"))
+    for i in rep.issues:
+        typer.echo(f"  [{i.severity}] {i.detail}")
+    if alert and rep.issues:
+        get_notifier().send("CRITICAL" if not rep.ok else "WARN", "Reconcile", rep.summary())
+    raise typer.Exit(code=0 if rep.ok else 1)
+
+
+@app.command()
+def report(
+    broker: str = typer.Option("alpaca", help="alpaca | paper"),
+    alert: bool = typer.Option(False, "--alert", help="also push the report via the notifier"),
+) -> None:
+    """Daily operations report: positions, today's orders, blocked, reconcile status."""
+    from quant.execution import TradeJournal
+    from quant.ops.notify import get_notifier
+    from quant.ops.report import daily_report
+
+    brk = _live_broker(broker)
+    with TradeJournal() as tj:
+        text = daily_report(brk, tj)
+    typer.echo(text)
+    if alert:
+        get_notifier().info("Daily report", text)
+
+
+@app.command("alert-test")
+def alert_test() -> None:
+    """Send a test alert through the configured notifier (verify Telegram wiring)."""
+    from quant.ops.notify import get_notifier
+
+    n = get_notifier()
+    ok = n.info("alert test", "if you see this in Telegram, alerts are wired correctly")
+    typer.echo(f"sent via {type(n).__name__}: {'ok' if ok else 'failed (see log)'}")
 
 
 if __name__ == "__main__":

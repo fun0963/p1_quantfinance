@@ -24,9 +24,11 @@
 
 ## 🔴 P0 — 開 `--execute` 前**必修**(安全/資金相關)
 
-> ✅ **更新(2026-07-07):Batch 0 已完成 —— P0 的 #1~#5、#7、#8 全部修復並補上回歸測試(100 測試綠)。**
-> 唯 **#6 完整每日對帳**尚未做(已由 #2「在途掛單感知」部分覆蓋重複下單風險),完整對帳排到 Batch 1 營運骨架。
-> 另修:journal 加上 WAL + busy timeout(P1 #17)。細節見各項下方的「✅ 已修」。
+> ✅ **更新(2026-07-07):Batch 0 + Batch 1(核心)已完成 —— 108 測試綠。**
+> - **Batch 0**:P0 的 #1~#5、#7、#8 全部修復 + 回歸測試;另修 journal WAL(P1 #17)。
+> - **Batch 1**:**#6 對帳完成** —— 新增 `ops/` 層(告警 Notifier + 對帳 reconcile + 每日報告),
+>   實盤下單前會**先對帳,發現不一致就停手 + CRITICAL 告警**(fail-safe)。CLI 新增
+>   `quant reconcile / report / alert-test`。細節見第三部分「第 1 批」。
 
 ### 1. Live 會用「過期快取資料」下單,且完全沒有新鮮度檢查
 - **位置**:[loaders.py](src/quant/data/loaders.py)(`load_bars` / `_cache_covers`)+ [live_runner.py:105](src/quant/execution/live_runner.py)
@@ -157,11 +159,14 @@
 
 ## 🛠️ 第 1 批:營運骨架(才能真的達成 MS3「paper 4 週零對帳差異」)
 
-- **告警通道**(breakdown M10.1):接 Telegram Bot,分 INFO/WARN/CRITICAL。**這是所有自動化的前提** —— 沒有告警,自動化 = 無人知道它掛了。
-- **OMS 訂單狀態機 + TCA**(M8.3/8.8):訂單生命週期入庫;記錄訊號價 vs 成交價。
-- **系統健康 heartbeat + 管線監控**(M10.2/10.3)。
-- **每日營運報告**(M10.5):收盤後自動出當日損益/成交/風控事件/隔日事件。
-- **回測 vs 實盤偏差追蹤**(M11.2):paper 期間就開始比對。
+- ✅ **告警通道**(M10.1):`ops/notify.py` —— `Notifier`(INFO/WARN/CRITICAL),設定好
+  Telegram 就推播、否則落到 log。排程失敗、對帳不符、下單/被擋都會告警。`quant alert-test` 驗證。
+- ✅ **每日對帳**(M8.6,補完 P0 #6):`ops/reconcile.py` —— 比對券商實際部位/掛單 vs journal:
+  未追蹤部位(CRITICAL)、無保護部位、孤兒掛單(WARN)。**live 下單前先對帳,不一致就停手**。`quant reconcile`。
+- ✅ **每日營運報告**(M10.5):`ops/report.py` —— 部位/權益/當日下單/被擋/對帳狀態。`quant report [--alert]`。
+- ⬜ **OMS 訂單狀態機 + TCA**(M8.3/8.8):訂單生命週期入庫;訊號價 vs 成交價。**(Batch 1 剩餘)**
+- ⬜ **系統健康 heartbeat + 管線監控**(M10.2/10.3)。**(Batch 1 剩餘)**
+- ⬜ **回測 vs 實盤偏差追蹤**(M11.2)。**(Batch 1 剩餘)**
 
 ## 📈 第 2 批:資料完整性(讓研究結論可信)
 

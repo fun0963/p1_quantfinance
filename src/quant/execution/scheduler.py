@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from quant.execution.journal import TradeJournal
 from quant.execution.live_runner import LiveDecision, run_live_step
+from quant.ops.notify import get_notifier
 from quant.risk import BracketConfig, FixedFractionRisk, RiskGate, RiskLimits
 from quant.utils import get_logger
 
@@ -53,11 +54,12 @@ def _build_broker(cfg: LiveConfig):
 
 def live_and_journal(
     cfg: LiveConfig, *, dry_run: bool = True, journal: TradeJournal | None = None,
-    data=None,
+    data=None, notifier=None,
 ) -> LiveDecision:
     """Run one live decision for `cfg` and record it. The schedulable unit of work.
 
     `data` may be passed pre-loaded (skips the fetch) — handy for tests/reuse.
+    `notifier` defaults to the configured one; inject NullNotifier in tests.
     """
     from quant.strategies.registry import get_strategy_cls
 
@@ -70,6 +72,7 @@ def live_and_journal(
                          max_staleness_days=cfg.max_staleness_days)
     strat = get_strategy_cls(cfg.strategy)(**cfg.params)
     broker = _build_broker(cfg)
+    notifier = notifier or get_notifier()
 
     gate = RiskGate(RiskLimits(enabled=True, max_position_notional=cfg.max_position_notional,
                                max_daily_loss=cfg.max_daily_loss))
@@ -82,6 +85,23 @@ def live_and_journal(
 
     own = journal or TradeJournal()
     try:
+        # Fail-safe: reconcile the real book before placing any live order. A CRITICAL
+        # mismatch means the system is out of sync — halt and alert, don't trade (P0 #6).
+        if not dry_run:
+            from quant.ops.reconcile import reconcile
+            rep = reconcile(broker, own)
+            for issue in (i for i in rep.issues if i.severity == "WARN"):
+                notifier.warn(f"{cfg.symbol} reconcile", issue.detail)
+            if not rep.ok:
+                detail = "; ".join(i.detail for i in rep.critical)
+                notifier.critical(f"{cfg.symbol}: reconciliation FAILED — not trading", detail)
+                dec = LiveDecision(
+                    ts=data.index[-1], symbol=cfg.symbol, action="halt",
+                    price=float(data["close"].iloc[-1]), dry_run=dry_run,
+                    reason=f"reconcile halt: {detail}", blocked=f"reconcile: {detail}")
+                _safe_record(own, dec, cfg.strategy)
+                return dec
+
         try:
             dec = run_live_step(
                 strat, data, cfg.symbol, broker,
@@ -99,8 +119,16 @@ def live_and_journal(
                 blocked=f"error: {exc}",
             )
             _safe_record(own, dec, cfg.strategy)
+            notifier.critical(f"{cfg.symbol}: live step crashed", f"{type(exc).__name__}: {exc}")
             raise
         _safe_record(own, dec, cfg.strategy)
+
+        # Outcome alerts: a real order placed (INFO) or a blocked order (WARN).
+        if not dry_run and dec.order_id:
+            notifier.info(f"{cfg.symbol}: {dec.action} order placed",
+                          f"qty={dec.qty:g} @ {dec.price:.2f} -> {dec.order_id}")
+        elif dec.blocked:
+            notifier.warn(f"{cfg.symbol}: order blocked", dec.blocked)
     finally:
         if journal is None:
             own.close()
@@ -145,6 +173,7 @@ def run_schedule(
 
     hour, minute = (int(x) for x in at.split(":"))
     sched = BlockingScheduler(timezone=tz)
+    notifier = get_notifier()
 
     def _job(c: LiveConfig) -> None:
         # Skip market holidays — cron mon-fri still fires on them, and acting would
@@ -156,6 +185,8 @@ def run_schedule(
             live_and_journal(c, dry_run=dry_run)
         except Exception as exc:  # noqa: BLE001 - one job's failure must not kill the loop
             log.error(f"[schedule] {c.symbol}/{c.strategy} job FAILED: {type(exc).__name__}: {exc}")
+            notifier.critical(f"scheduled job {c.symbol}/{c.strategy} FAILED",
+                              f"{type(exc).__name__}: {exc}")
 
     for cfg in configs:
         sched.add_job(
