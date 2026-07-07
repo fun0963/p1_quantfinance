@@ -48,10 +48,12 @@ def load_bars(
     """
     store = get_store()
     start = start or datetime(2020, 1, 1, tzinfo=UTC)
+    prior: pd.DataFrame | None = None   # cache we're about to replace, for a point-in-time check
 
     if use_cache and store.exists(symbol, timeframe):
         cached = store.load(symbol, timeframe)
         if cached is not None and not cached.empty:
+            prior = cached
             # Compare on calendar date to sidestep tz-aware/naive index mismatches.
             covers = _cache_covers(cached.index[0].date(), start.date())
             fresh = (max_staleness_days is None or
@@ -70,6 +72,17 @@ def load_bars(
                          f"{max_staleness_days}d — re-downloading for freshness")
 
     df = feed.get_history(symbol, start=start, timeframe=timeframe)
+
+    # Point-in-time guard: if this download rewrote SETTLED history vs the cache we're
+    # about to overwrite (a split/adjustment), the past just changed — never silently.
+    if prior is not None:
+        from quant.data.integrity import detect_history_mutation, record_mutation_event
+
+        mrep = detect_history_mutation(prior, df, symbol=symbol, timeframe=timeframe)
+        if mrep.mutated:
+            log.warning(f"data integrity [{symbol}]: {mrep.summary()}")
+            record_mutation_event(mrep)
+
     store.save(symbol, timeframe, df)  # cache the full pull; callers get the sliced view
     log.info(f"downloaded & cached {len(df)} bars for {symbol}")
 

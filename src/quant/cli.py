@@ -759,5 +759,51 @@ def drift(
     raise typer.Exit(code=0 if rep.ok else 1)
 
 
+@app.command()
+def integrity(
+    symbol: str = typer.Argument("", help="symbol to check (blank = list recorded events)"),
+    start: str = typer.Option("2020-01-01", help="history start for the comparison download"),
+    timeframe: str = typer.Option("1d"),
+    check: bool = typer.Option(False, "--check",
+                               help="re-download and compare to the cache (non-destructive)"),
+) -> None:
+    """Point-in-time integrity: detect when a data refresh rewrote settled history
+    (splits/adjustments). `--check SYMBOL` compares a fresh pull to the cache WITHOUT
+    overwriting it; with no symbol, lists mutation events the loader has recorded."""
+    from quant.data.integrity import (
+        detect_history_mutation,
+        read_mutation_events,
+        record_mutation_event,
+    )
+
+    if check and symbol:
+        from quant.data.feeds.yfinance_feed import YFinanceFeed
+        from quant.data.storage import get_store
+
+        store = get_store()
+        old = store.load(symbol, timeframe) if store.exists(symbol, timeframe) else None
+        if old is None or old.empty:
+            typer.echo(f"no cache for {symbol} {timeframe} — download it first (quant download)")
+            raise typer.Exit(code=1)
+        start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
+        fresh = YFinanceFeed().get_history(symbol, start=start_dt, timeframe=timeframe)
+        rep = detect_history_mutation(old, fresh, symbol=symbol, timeframe=timeframe)
+        typer.echo("\n" + rep.summary())
+        for d, oldc, newc in rep.samples:
+            typer.echo(f"  {d}: {oldc:.4f} -> {newc:.4f}")
+        if rep.mutated:
+            record_mutation_event(rep)
+            typer.echo("  (recorded to integrity_events.csv; cache NOT overwritten)")
+        raise typer.Exit(code=1 if rep.mutated else 0)
+
+    events = read_mutation_events()
+    if events.empty:
+        typer.echo("no history-mutation events recorded yet "
+                   "(the loader records them when a re-download rewrites settled bars)")
+    else:
+        typer.echo(f"\nRecorded history-mutation events ({len(events)}):\n")
+        typer.echo(events.to_string(index=False))
+
+
 if __name__ == "__main__":
     app()

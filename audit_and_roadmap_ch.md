@@ -135,7 +135,7 @@
 | 模組 | 目前狀態 | 已有 | 主要缺口(對我們的範圍) |
 |------|:---:|------|------|
 | **M0 基礎建設** | 🟢 ~90% | git、venv/lock、.env、loguru、Parquet+Timescale、APScheduler+Task Scheduler、CI | **交易日曆(`pandas_market_calendars`)** 缺 → 直接造成 P0#7 假日 bug;log 非 JSON |
-| **M1 資料收集** | 🟡 ~40% | 美股日線(yfinance+Alpaca)、OHLCV schema、品質檢查函式、快取 | **存活者偏差、point-in-time、基本面、總經、完整每日 ETL、品質強制化** |
+| **M1 資料收集** | 🟡 ~45% | 美股日線(yfinance+Alpaca)、OHLCV schema、品質檢查、快取、**point-in-time 歷史改寫偵測** | **存活者偏差、原始/調整價分離、基本面、總經、完整每日 ETL、品質強制化** |
 | **M2 公司資料庫** | ❌ | — | 全缺(公司主檔/財務指標/同業比較)—— 目前非我們路線 |
 | **M3 供應鏈** | ❌ | — | 全缺 —— 目前非我們路線 |
 | **M4 因子庫** | 🟡 ~15% | journal 記 session | **因子計算框架、因子檢定(IC/RankIC)、實驗記錄(git-hash/參數/資料版本)、研究知識庫** |
@@ -179,9 +179,10 @@
 
 ## 📈 第 2 批:資料完整性(讓研究結論可信)
 
-- **存活者偏差 + point-in-time**(M1.14/1.6):這是回測可信度的命門;沒有它,回測報酬系統性高估。
-- **正式資料源**:yfinance 只能當原型;`auto_adjust=True` 會**回溯改寫歷史**(除權息後舊訊號變樣)。上線前換付費源或至少存快照。
-- **成本/滑價模型**(M5.2/5.3):真實化回測,並用 paper 的 TCA 校準。
+- 🟡 **point-in-time 歷史改寫偵測**(M1.6,**本次完成**):`auto_adjust=True` 除權息後會回溯改寫全部歷史,而 `load_bars` 重抓時會**默默覆蓋快取**。新增 `data/integrity.py`:重抓前比對「已結算的重疊區間」,若歷史被改寫就**告警 + 記錄**(`integrity_events.csv`),不再無聲無息。CLI `quant integrity [SYMBOL --check]`(`--check` 只比對不覆蓋)。→ `data/integrity.py`、接進 `data/loaders.py`
+- ⬜ **存活者偏差**(M1.14):回測只含至今仍存在的標的 → 報酬系統性高估。需要標的存續期/下市名單 + as-of 宇宙(yfinance 抓不到下市資料,可能要換源)。**(第 2 批剩餘)**
+- ⬜ **原始 + 調整價分離存放 / 正式資料源**:yfinance 只能當原型;上線前換付費源或存原始價 + 調整因子,才能真正重建 as-of 價格。**(第 2 批剩餘)**
+- ⬜ **成本/滑價模型**(M5.2/5.3):真實化回測,並用 paper 的 TCA 校準。**(第 2 批剩餘)**
 
 ## 🔬 第 3 批:研究深化(擴張期)
 
