@@ -3,6 +3,8 @@ typer's CliRunner. `info` is fully offline; `backtest` is exercised end-to-end
 with the data loader stubbed to a synthetic frame (no network, no cache)."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -74,3 +76,34 @@ def test_backtest_unknown_strategy_errors(monkeypatch):
     r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "does_not_exist",
                                 "--engine", "vectorbt"])
     assert r.exit_code != 0
+
+
+def test_backtest_reports_cost_model(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--engine", "vectorbt", "--slippage-bps", "20"])
+    assert r.exit_code == 0, r.output
+    assert "cost model" in r.output and "slippage 20.0 bps" in r.output
+
+
+def test_backtest_calibrate_from_tca(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+
+    import quant.execution as ex
+    import quant.ops.tca as tca_mod
+
+    class _DummyJournal:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(ex, "TradeJournal", _DummyJournal)
+    monkeypatch.setattr(tca_mod, "tca_report", lambda tj, strategy=None: SimpleNamespace(
+        total_notional_usd=1_000_000, total_commission_usd=100.0, avg_slippage_bps=8.0))
+
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--engine", "vectorbt", "--calibrate"])
+    assert r.exit_code == 0, r.output
+    assert "fees 1.0 bps" in r.output and "slippage 8.0 bps" in r.output

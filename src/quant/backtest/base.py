@@ -30,9 +30,11 @@ class BacktestEngine(ABC):
 
     name: str = "base"
 
-    def __init__(self, cash: float = 100_000, fees: float = 0.0005) -> None:
+    def __init__(self, cash: float = 100_000, fees: float = 0.0005,
+                 slippage: float = 0.0) -> None:
         self.cash = cash
         self.fees = fees
+        self.slippage = slippage  # adverse fill fraction; 0 = frictionless (opt-in realism)
 
     @abstractmethod
     def run(self, strategy: BaseStrategy, data: pd.DataFrame,

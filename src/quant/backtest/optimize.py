@@ -44,6 +44,7 @@ def sweep(
     fees: float = 0.0005,
     sort_by: str = "sharpe",
     timeframe: str = "1d",
+    slippage: float = 0.0,
 ) -> pd.DataFrame:
     """Backtest every valid param combo at once; return a ranked table.
 
@@ -76,6 +77,7 @@ def sweep(
         exits=exits_df,
         init_cash=cash,
         fees=fees,
+        slippage=slippage,
         freq="1D",
     )
 

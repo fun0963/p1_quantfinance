@@ -77,6 +77,16 @@ def test_backtrader_fills_per_trade_records():
     assert stats["num_wins"] + stats["num_losses"] <= len(res.trades)
 
 
+@pytest.mark.parametrize("Engine", [VectorBTEngine, BacktraderEngine])
+def test_slippage_reduces_final_equity(Engine):
+    """Modeling slippage must make a backtest strictly more conservative on both
+    engines (no more frictionless optimism)."""
+    strat = get_strategy_cls("ma_cross")(fast=10, slow=30)
+    frictionless = Engine(cash=100_000, slippage=0.0).run(strat, _fixture())
+    with_slip = Engine(cash=100_000, slippage=0.002).run(strat, _fixture())  # 20 bps
+    assert with_slip.metrics["final_equity"] < frictionless.metrics["final_equity"]
+
+
 def test_dual_engines_agree():
     """VectorBT and Backtrader must stay in lockstep (cheat-on-close) — the residual
     gap is execution modeling only. Locks the core dual-engine invariant."""

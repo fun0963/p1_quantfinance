@@ -180,9 +180,9 @@
 ## 📈 第 2 批:資料完整性(讓研究結論可信)
 
 - 🟡 **point-in-time 歷史改寫偵測**(M1.6,**本次完成**):`auto_adjust=True` 除權息後會回溯改寫全部歷史,而 `load_bars` 重抓時會**默默覆蓋快取**。新增 `data/integrity.py`:重抓前比對「已結算的重疊區間」,若歷史被改寫就**告警 + 記錄**(`integrity_events.csv`),不再無聲無息。CLI `quant integrity [SYMBOL --check]`(`--check` 只比對不覆蓋)。→ `data/integrity.py`、接進 `data/loaders.py`
-- ⬜ **存活者偏差**(M1.14):回測只含至今仍存在的標的 → 報酬系統性高估。需要標的存續期/下市名單 + as-of 宇宙(yfinance 抓不到下市資料,可能要換源)。**(第 2 批剩餘)**
+- 🟠 **存活者偏差**(M1.14):**已做範圍決策 — 刻意不做**。聚焦單標的/ETF 技術面擇時,此範圍幾乎無偏差;維持 yfinance。觸發條件:日後做「跨標的技術面選股/掃描」時才需換 survivorship-free 資料源 + 建 as-of 宇宙。詳見 `architecture_map_ch.md` §8 #11。
 - ⬜ **原始 + 調整價分離存放 / 正式資料源**:yfinance 只能當原型;上線前換付費源或存原始價 + 調整因子,才能真正重建 as-of 價格。**(第 2 批剩餘)**
-- ⬜ **成本/滑價模型**(M5.2/5.3):真實化回測,並用 paper 的 TCA 校準。**(第 2 批剩餘)**
+- 🟢 **成本/滑價模型**(M5.2/5.3,**本次完成**):`backtest/costs.py` 新增 `CostModel`(fees+slippage,皆 notional 分數);兩引擎 + sweep 支援 slippage(Backtrader 把 slippage 併入 commission,避開 COC 下 `set_slippage_perc` 不可靠的問題,兩引擎成本一致);CLI `backtest --fees-bps/--slippage-bps/--calibrate`。`--calibrate` 讀 journal TCA 反推 fees+slippage 回饋回測,打通 量測→校準→回測 閉環。預設 slippage=0 保 golden 回歸。→ `backtest/costs.py`、`base/vectorbt_engine/backtrader_engine/optimize`、`cli.py`
 
 ## 🔬 第 3 批:研究深化(擴張期)
 

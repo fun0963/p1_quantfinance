@@ -88,8 +88,9 @@ def _make_strategy_cls(target_pct: float, equity_log: list, trades_log: list):
 class BacktraderEngine(BacktestEngine):
     name = "backtrader"
 
-    def __init__(self, cash: float = 100_000, fees: float = 0.0005, target_pct: float = 0.99):
-        super().__init__(cash=cash, fees=fees)
+    def __init__(self, cash: float = 100_000, fees: float = 0.0005,
+                 slippage: float = 0.0, target_pct: float = 0.99):
+        super().__init__(cash=cash, fees=fees, slippage=slippage)
         self.target_pct = target_pct  # fraction of equity per position (≈ all-in by default)
 
     def run(
@@ -106,7 +107,11 @@ class BacktraderEngine(BacktestEngine):
         cerebro.addstrategy(_make_strategy_cls(self.target_pct, equity_log, trades_log))
         cerebro.adddata(_build_feed(data, signals))
         cerebro.broker.setcash(self.cash)
-        cerebro.broker.setcommission(commission=self.fees)
+        # Slippage is folded into commission (both are per-side fractions of
+        # notional). Backtrader's set_slippage_perc is unreliable under
+        # cheat-on-close, and charging fees+slippage as one commission is P&L-
+        # equivalent per side and keeps total cost in step with the VectorBT engine.
+        cerebro.broker.setcommission(commission=self.fees + self.slippage)
         cerebro.broker.set_coc(True)  # cheat-on-close → same-bar fill, matches vectorbt
         cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
 

@@ -348,23 +348,40 @@ def backtest(
     timeframe: str = typer.Option("1d"),
     cash: float = typer.Option(100_000),
     engine: str = typer.Option("both", help="both | vectorbt | backtrader"),
+    fees_bps: float = typer.Option(5.0, help="commission in basis points per side"),
+    slippage_bps: float = typer.Option(0.0, help="adverse slippage in basis points per side"),
+    calibrate: bool = typer.Option(False, "--calibrate",
+                                   help="derive fees+slippage from the live journal's TCA history"),
     no_cache: bool = typer.Option(False, "--no-cache", help="force re-download"),
     plot: bool = typer.Option(False, "--plot", help="save an interactive equity/drawdown HTML"),
 ) -> None:
     """Backtest a strategy and compare engines side by side."""
     from quant.backtest.backtrader_engine import BacktraderEngine
+    from quant.backtest.costs import CostModel
     from quant.backtest.vectorbt_engine import VectorBTEngine
     from quant.strategies.registry import get_strategy_cls
 
     data = _load(symbol, start, timeframe, no_cache)
     strat = get_strategy_cls(strategy)(**_parse_params(params))
 
+    if calibrate:
+        # Close the loop: charge the backtest what live execution actually cost.
+        from quant.execution import TradeJournal
+        from quant.ops.tca import tca_report
+
+        with TradeJournal() as tj:
+            cost = CostModel.from_tca(tca_report(tj, strategy=strategy))
+    else:
+        cost = CostModel(fees=fees_bps / 1e4, slippage=slippage_bps / 1e4)
+
     engines = {"vectorbt": VectorBTEngine, "backtrader": BacktraderEngine}
     chosen = engines if engine == "both" else {engine: engines[engine]}
-    results = {n: cls(cash=cash).run(strat, data, timeframe=timeframe) for n, cls in chosen.items()}
+    results = {n: cls(cash=cash, fees=cost.fees, slippage=cost.slippage).run(strat, data, timeframe=timeframe)
+               for n, cls in chosen.items()}
 
     typer.echo(f"\n{strat}  on  {symbol}  "
                f"({len(data)} bars, {data.index[0].date()} -> {data.index[-1].date()})")
+    typer.echo(cost.summary())
     keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "max_drawdown_pct", "num_trades"]
     header = f"{'metric':<20}" + "".join(f"{n:>14}" for n in results)
     typer.echo(header)

@@ -33,6 +33,7 @@ class VectorBTEngine(BacktestEngine):
             exits=signals["exits"],
             init_cash=self.cash,
             fees=self.fees,
+            slippage=self.slippage,
             freq="1D",
         )
         stats = pf.stats()
