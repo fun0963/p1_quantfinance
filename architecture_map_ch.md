@@ -158,7 +158,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | **Batch 0** | **8 個 P0 實盤安全漏洞全修** + 回歸測試 + journal WAL | ✅ `0e3eecb` |
 | **Batch 1(核心)** | ops 層:告警 Notifier + 對帳 reconcile + 每日報告;實盤下單前 fail-safe 對帳 | ✅ `8a91982` |
 | **Batch 1(剩餘)** | OMS 訂單狀態機 + TCA 滑價 + 健康 heartbeat + 回測/實盤偏差;經對抗式審查修 7 個 bug | ✅ `c225d22` |
-| **Batch 2 增量#1** | **point-in-time 歷史改寫偵測**(`data/integrity.py` + CLI `quant integrity`) | 🟡 已測**未 commit** |
+| **Batch 2 增量#1** | **point-in-time 歷史改寫偵測**(`data/integrity.py` + CLI `quant integrity`) | ✅ `baad351` |
 
 對照 `quant_system_breakdown.md` 里程碑:**MS2(研究)完成;MS1/MS3 過半;MS4(真錢)在 P0 修復後解除封鎖,但仍建議先跑 paper 觀察**。
 
@@ -180,9 +180,9 @@ run_schedule(APScheduler) → 每次觸發 _job：
 
 | # | 項目 | 位置 | 影響 |
 |---|---|---|---|
-| 1 | **資料源無重試 / 退避** | `feeds/yfinance_feed.py`、`alpaca_feed.py` | 一次網路抖動就讓排程實盤該次永久失敗 |
-| 2 | **未知 timeframe 靜默降級成日線並存錯 key** | `yfinance_feed.py`(`_INTERVAL.get(tf,'1d')`) | 5m 請求被當 1d 快取 → 靜默資料錯誤;應白名單 + `raise` |
-| 3 | **parquet 覆蓋非原子、無備份** | `storage/parquet_store.py`、`loaders.py` | 抓壞可永久覆蓋好的歷史(`integrity.py` 只偵測不阻止)→ 應 temp+rename + 覆蓋前備份 |
+| ~~1~~ | ✅ **資料源重試 / 退避**(`8df365b`) | `feeds/retry.py` + 兩個 feed | 已修:`with_retries` 有界重試+指數退避,`ValueError`(無資料/不支援 tf)視為 fatal 不重試 |
+| ~~2~~ | ✅ **timeframe 白名單**(`0e42de3`) | `yfinance_feed.py`、`alpaca_feed.py` | 已修:未知 tf 改嚴格查表 `raise`(檢查移到 lazy import 前);兩個 feed 都修 |
+| ~~3~~ | ✅ **parquet 原子寫入 + 備份**(`1bb9027`) | `storage/parquet_store.py` | 已修:temp→`os.replace` 原子覆蓋 + 覆蓋前複製 `.bak`;寫入失敗清 `.tmp` 保原檔 |
 | 4 | **web 500 可能洩漏 Timescale DSN、sweep grid 無上限** | `web/routes.py` | 錯誤 traceback 露密碼;超大 grid → OOM(僅 local-only 緩解) |
 | 5 | **20 處廣捕例外未分類** | 8 個檔的 `noqa: BLE001` | 多屬 ops best-effort(合理),但實盤路徑宜分類:網路(重試)/券商(告警停手)/資料(失敗) |
 | 6 | **Backtrader 引擎未填 per-trade 記錄** | `backtest/backtrader_engine.py`(`trades=None`) | TCA / 逐筆分析在該引擎缺資料 |
