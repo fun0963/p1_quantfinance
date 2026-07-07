@@ -40,6 +40,41 @@ def test_parquet_roundtrip(tmp_path):
     assert len(out) == 10
 
 
+def test_overwrite_backs_up_previous_generation(tmp_path):
+    store = ParquetStore(base_dir=tmp_path)
+    store.save("SPY", "1d", _bars(10))
+    store.save("SPY", "1d", _bars(20))  # overwrite with a different frame
+
+    bak = tmp_path / "bars" / "SPY_1d.parquet.bak"
+    assert bak.exists()                            # previous generation preserved
+    assert len(pd.read_parquet(bak)) == 10         # holds the pre-overwrite data
+    assert len(store.load("SPY", "1d")) == 20       # live file holds the new data
+
+
+def test_first_save_leaves_no_backup_or_temp(tmp_path):
+    store = ParquetStore(base_dir=tmp_path)
+    store.save("SPY", "1d", _bars())
+    bars_dir = tmp_path / "bars"
+    assert not (bars_dir / "SPY_1d.parquet.bak").exists()
+    assert not (bars_dir / "SPY_1d.parquet.tmp").exists()
+
+
+def test_failed_write_preserves_original_and_cleans_temp(tmp_path, monkeypatch):
+    store = ParquetStore(base_dir=tmp_path)
+    store.save("SPY", "1d", _bars(10))  # good history already cached
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", boom)
+    with pytest.raises(OSError, match="disk full"):
+        store.save("SPY", "1d", _bars(20))
+
+    bars_dir = tmp_path / "bars"
+    assert not (bars_dir / "SPY_1d.parquet.tmp").exists()  # temp cleaned up
+    assert len(store.load("SPY", "1d")) == 10               # original intact
+
+
 def test_get_store_rejects_unknown_backend(monkeypatch):
     import quant.data.storage as st
 
