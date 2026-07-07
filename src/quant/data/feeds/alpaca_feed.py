@@ -11,6 +11,7 @@ import pandas as pd
 
 from config import get_settings
 from quant.data.feeds.base import DataFeed
+from quant.data.feeds.retry import with_retries
 from quant.utils import get_logger
 
 log = get_logger(__name__)
@@ -46,7 +47,10 @@ class AlpacaFeed(DataFeed):
         req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=tf, start=start, end=end)
         log.debug(f"alpaca fetch {symbol} {timeframe} from {start}")
         # alpaca-py types the response as BarSet | dict; .df is the documented BarSet API.
-        bars = client.get_stock_bars(req).df  # type: ignore[union-attr]
+        bars = with_retries(
+            lambda: client.get_stock_bars(req).df,  # type: ignore[union-attr]
+            label=f"alpaca {symbol} {timeframe}",
+        )
 
         if bars.empty:
             raise ValueError(f"Alpaca returned no data for {symbol}")

@@ -10,6 +10,7 @@ from datetime import datetime
 import pandas as pd
 
 from quant.data.feeds.base import DataFeed
+from quant.data.feeds.retry import with_retries
 from quant.utils import get_logger
 
 log = get_logger(__name__)
@@ -30,13 +31,16 @@ class YFinanceFeed(DataFeed):
 
         interval = _INTERVAL.get(timeframe, "1d")
         log.debug(f"yfinance fetch {symbol} {timeframe} from {start}")
-        raw = yf.download(
-            symbol,
-            start=start,
-            end=end,
-            interval=interval,
-            auto_adjust=True,
-            progress=False,
+        raw = with_retries(
+            lambda: yf.download(
+                symbol,
+                start=start,
+                end=end,
+                interval=interval,
+                auto_adjust=True,
+                progress=False,
+            ),
+            label=f"yfinance {symbol} {timeframe}",
         )
         if raw.empty:
             raise ValueError(f"yfinance returned no data for {symbol}")
