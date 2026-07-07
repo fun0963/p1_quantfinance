@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS live_log (
     dry_run   INTEGER,
     reason    TEXT
 );
+-- Drift/reconcile filter live_log by (symbol, strategy); index it so those reads
+-- don't scan the whole table (and so the newest-N slice is taken per symbol).
+CREATE INDEX IF NOT EXISTS ix_live_log_symbol ON live_log(symbol, strategy, id);
 
 -- OMS: the lifecycle of every REAL order the live runner places. `intended_price`
 -- is the arrival/decision price (latest close when we decided) — the TCA benchmark
@@ -211,11 +214,26 @@ class TradeJournal:
         return cur.lastrowid
 
     # --- read side ---------------------------------------------------------
-    def live_log(self, limit: int = 30) -> pd.DataFrame:
+    def live_log(self, limit: int = 30, *, symbol: str | None = None,
+                 strategy: str | None = None) -> pd.DataFrame:
+        """Recent live-runner decisions, newest first. Optional symbol/strategy
+        filters are pushed into SQL (indexed) so callers like drift don't pull
+        the whole table and slice in pandas — which could also drop older bars
+        for the target symbol when other symbols dominate the recent rows."""
+        where: list[str] = []
+        params: list[str | int] = []
+        if symbol:
+            where.append("symbol = ?")
+            params.append(symbol)
+        if strategy:
+            where.append("strategy = ?")
+            params.append(strategy)
+        clause = f"WHERE {' AND '.join(where)} " if where else ""
+        params.append(limit)
         return pd.read_sql_query(
             "SELECT id, logged_at, bar_ts, symbol, strategy, action, qty, price, "
-            "order_id, blocked, dry_run FROM live_log ORDER BY id DESC LIMIT ?",
-            self.conn, params=(limit,),
+            f"order_id, blocked, dry_run FROM live_log {clause}ORDER BY id DESC LIMIT ?",
+            self.conn, params=tuple(params),
         )
 
     def sessions(self, limit: int = 20) -> pd.DataFrame:

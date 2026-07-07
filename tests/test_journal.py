@@ -1,6 +1,8 @@
 """Tests for the SQLite trade journal — record a session, read it back."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 
@@ -53,6 +55,37 @@ def test_blocked_orders_are_persisted(tmp_path):
 
     assert len(blocks) == len(res.blocked) > 0
     assert blocks["reason"].str.contains("exceeds cap").any()
+
+
+def _decision(symbol, action, order_id=None):
+    return SimpleNamespace(ts="2021-01-04", symbol=symbol, action=action, qty=10.0,
+                           price=100.0, order_id=order_id, blocked=None, dry_run=False,
+                           reason="")
+
+
+def test_live_log_symbol_strategy_filter_pushed_to_sql(tmp_path):
+    with TradeJournal(db_path=tmp_path / "j.db") as tj:
+        tj.record_live_decision(_decision("SPY", "buy", order_id="o1"), strategy="ma_cross")
+        tj.record_live_decision(_decision("QQQ", "buy", order_id="o2"), strategy="ma_cross")
+        tj.record_live_decision(_decision("SPY", "sell", order_id="o3"), strategy="momentum")
+
+        assert len(tj.live_log()) == 3                       # unfiltered = all rows
+        spy = tj.live_log(symbol="SPY")
+        assert set(spy["symbol"]) == {"SPY"} and len(spy) == 2
+        spy_mom = tj.live_log(symbol="SPY", strategy="momentum")
+        assert len(spy_mom) == 1 and spy_mom.iloc[0]["action"] == "sell"
+
+
+def test_live_log_filter_uses_index(tmp_path):
+    # Prove the index isn't dead weight: the planner uses it for the filtered read.
+    with TradeJournal(db_path=tmp_path / "j.db") as tj:
+        names = {r[0] for r in tj.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+        assert "ix_live_log_symbol" in names
+        plan = tj.conn.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM live_log WHERE symbol=? ORDER BY id DESC LIMIT ?",
+            ("SPY", 10)).fetchall()
+        assert "ix_live_log_symbol" in " ".join(str(r) for r in plan)
 
 
 def test_multiple_sessions_increment_ids(tmp_path):

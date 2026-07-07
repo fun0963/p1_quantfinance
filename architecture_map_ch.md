@@ -186,7 +186,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | ~~4~~ | ✅ **web 500 遮蔽 DSN + grid 上限** | `web/routes.py` | 已修:`_safe_detail` regex 遮蔽 URL 憑證(`user:***@`)、完整訊息只記 server log;`MAX_GRID_COMBOS=5000` 展開前擋超大 grid 回 400 |
 | ~~5~~ | ⚪ **won't-fix(已評估)** | 8 個檔的 `noqa: BLE001` | 20 處經逐一盤點後全屬刻意 best-effort:告警/對帳/報告/OMS/排程監控/heartbeat 皆為「側線」,不變式硬性要求永不 raise(否則會阻斷主線交易與止損)。技術債想要的分類其實已達成:網路重試在 #1(feed 層)、券商真失敗由 `scheduler` job 總 handler 告警停手。把這些廣捕捉改窄=在安全護欄戳洞,風險 > 價值。**唯一可選微幅收斂**:`alpaca_broker.py:144` 改捕 Alpaca 特定例外(純美化,未做) |
 | ~~6~~ | ✅ **Backtrader per-trade 記錄** | `backtest/backtrader_engine.py` | 已修:`notify_trade` 攔截每筆平倉,產出逐筆表(entry/exit time+price、bars_held、gross/net PnL、commission),欄位對齊 VectorBT 的 `PnL`,`trade_stats`/TCA 兩引擎可比 |
-| 7 | **`live_log` 無索引** | `execution/journal.py` | 大量歷史查詢慢;高併發寫入即使 WAL 仍可能鎖 |
+| ~~7~~ | ✅ **`live_log` 加索引 + 過濾下推** | `execution/journal.py`、`cli.py` | 已修:加 `ix_live_log_symbol(symbol,strategy,id)`;`live_log()` 新增 symbol/strategy 過濾下推 SQL(EXPLAIN 驗證用到索引),drift 呼叫端改帶 symbol。順帶修正潛在正確性 bug:原本抓最新 1 萬列再 pandas 過濾,多標的混雜時可能漏掉目標標的較舊的 bar |
 | 8 | **AlpacaBroker 每次呼叫都建新 client** | `execution/alpaca_broker.py` | 高頻排程下可能觸發 rate-limit |
 | 9 | **測試缺口** | — | 無 `test_config.py`、無 CLI 端到端測、pytest `asyncio_mode` 警告 |
 | 10 | **`walk_forward` / `portfolio` 寫死 VectorBT** | `backtest/walkforward.py`、`portfolio/portfolio.py` | 無法用 Backtrader 做 OOS/組合(引擎該可注入) |

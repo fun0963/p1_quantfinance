@@ -742,7 +742,7 @@ def drift(
     data = _load(symbol, start, timeframe)
     strat = get_strategy_cls(strategy)(**_parse_params(params))
     with TradeJournal() as tj:
-        live_log = tj.live_log(limit=10_000)
+        live_log = tj.live_log(limit=10_000, symbol=symbol, strategy=strategy)
     rep = decision_drift(data, strat, live_log, symbol=symbol, strategy_name=strategy,
                          min_agreement=min_agreement)
     typer.echo("\n" + rep.summary())
