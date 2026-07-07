@@ -1,0 +1,76 @@
+"""CLI coverage: the pure arg-parsing helpers, plus end-to-end command runs via
+typer's CliRunner. `info` is fully offline; `backtest` is exercised end-to-end
+with the data loader stubbed to a synthetic frame (no network, no cache)."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+import typer
+from typer.testing import CliRunner
+
+import quant.cli as cli
+from quant.cli import _coerce, _parse_grid, _parse_legs, _parse_params
+
+runner = CliRunner()
+
+
+def _synthetic(n=300, seed=5):
+    idx = pd.date_range("2021-01-01", periods=n, freq="B", tz="UTC")
+    rng = np.random.default_rng(seed)
+    close = pd.Series(100 + np.cumsum(rng.normal(0.05, 1, n)), index=idx).abs() + 10
+    return pd.DataFrame(
+        {"open": close, "high": close * 1.01, "low": close * 0.99,
+         "close": close, "volume": 1e6}, index=idx,
+    )
+
+
+# --- pure parsing helpers ---------------------------------------------------
+def test_coerce_prefers_int_then_float_then_str():
+    assert _coerce("5") == 5 and isinstance(_coerce("5"), int)
+    assert _coerce("2.5") == 2.5 and isinstance(_coerce("2.5"), float)
+    assert _coerce("ma") == "ma"
+
+
+def test_parse_params():
+    assert _parse_params("fast=20,slow=50") == {"fast": 20, "slow": 50}
+    assert _parse_params("") == {}
+
+
+def test_parse_grid():
+    assert _parse_grid("fast=5,10,20;slow=50,100") == {"fast": [5, 10, 20], "slow": [50, 100]}
+    assert _parse_grid(None) is None
+
+
+def test_parse_legs_builds_legs_with_params():
+    legs = _parse_legs("SPY:momentum:0.5:lookback=100;QQQ:ma_cross:0.5:fast=20,slow=50")
+    assert len(legs) == 2
+    assert legs[0].symbol == "SPY" and legs[0].weight == 0.5 and legs[0].params == {"lookback": 100}
+
+
+def test_parse_legs_rejects_malformed_leg():
+    with pytest.raises(typer.BadParameter):
+        _parse_legs("SPY:momentum")  # missing weight
+
+
+# --- end-to-end command runs ------------------------------------------------
+def test_info_command_lists_settings_and_strategies():
+    r = runner.invoke(cli.app, ["info"])
+    assert r.exit_code == 0, r.output
+    assert "strategies" in r.output
+    assert "ma_cross" in r.output and "momentum" in r.output
+
+
+def test_backtest_command_end_to_end(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--params", "fast=5,slow=20", "--engine", "vectorbt"])
+    assert r.exit_code == 0, r.output
+    assert "vectorbt" in r.output and "sharpe" in r.output
+
+
+def test_backtest_unknown_strategy_errors(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "does_not_exist",
+                                "--engine", "vectorbt"])
+    assert r.exit_code != 0
