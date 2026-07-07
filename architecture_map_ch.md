@@ -183,7 +183,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | ~~1~~ | ✅ **資料源重試 / 退避**(`8df365b`) | `feeds/retry.py` + 兩個 feed | 已修:`with_retries` 有界重試+指數退避,`ValueError`(無資料/不支援 tf)視為 fatal 不重試 |
 | ~~2~~ | ✅ **timeframe 白名單**(`0e42de3`) | `yfinance_feed.py`、`alpaca_feed.py` | 已修:未知 tf 改嚴格查表 `raise`(檢查移到 lazy import 前);兩個 feed 都修 |
 | ~~3~~ | ✅ **parquet 原子寫入 + 備份**(`1bb9027`) | `storage/parquet_store.py` | 已修:temp→`os.replace` 原子覆蓋 + 覆蓋前複製 `.bak`;寫入失敗清 `.tmp` 保原檔 |
-| 4 | **web 500 可能洩漏 Timescale DSN、sweep grid 無上限** | `web/routes.py` | 錯誤 traceback 露密碼;超大 grid → OOM(僅 local-only 緩解) |
+| ~~4~~ | ✅ **web 500 遮蔽 DSN + grid 上限** | `web/routes.py` | 已修:`_safe_detail` regex 遮蔽 URL 憑證(`user:***@`)、完整訊息只記 server log;`MAX_GRID_COMBOS=5000` 展開前擋超大 grid 回 400 |
 | 5 | **20 處廣捕例外未分類** | 8 個檔的 `noqa: BLE001` | 多屬 ops best-effort(合理),但實盤路徑宜分類:網路(重試)/券商(告警停手)/資料(失敗) |
 | 6 | **Backtrader 引擎未填 per-trade 記錄** | `backtest/backtrader_engine.py`(`trades=None`) | TCA / 逐筆分析在該引擎缺資料 |
 | 7 | **`live_log` 無索引** | `execution/journal.py` | 大量歷史查詢慢;高併發寫入即使 WAL 仍可能鎖 |

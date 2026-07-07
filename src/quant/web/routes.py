@@ -8,11 +8,13 @@ places an order.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
+from quant.utils import get_logger
 from quant.web.schemas import (
     BacktestRequest,
     PortfolioRequest,
@@ -21,6 +23,37 @@ from quant.web.schemas import (
 )
 
 router = APIRouter()
+log = get_logger(__name__)
+
+# Cap on user-supplied sweep/walk-forward grids: expand_grid materializes the
+# full cartesian product before filtering, so an unbounded grid can OOM the box.
+MAX_GRID_COMBOS = 5_000
+
+# URL credentials (e.g. a Timescale DSN "postgresql://user:pass@host") that must
+# never reach the client in an error message.
+_CREDS_RE = re.compile(r"(://[^:/@\s]+:)[^@/\s]+(@)")
+
+
+def _safe_detail(exc: Exception) -> str:
+    """Client-safe error text: log the full error server-side, but redact any
+    URL credentials so a DB connection failure can't leak the DSN password."""
+    full = f"{type(exc).__name__}: {exc}"
+    log.warning(f"request failed: {full}")
+    return _CREDS_RE.sub(r"\1***\2", full)
+
+
+def _check_grid_size(grid: dict[str, list]) -> None:
+    """Reject an oversized user grid before expand_grid materializes it."""
+    if not grid:
+        return  # empty -> strategy default grid, which is bounded
+    combos = 1
+    for values in grid.values():
+        combos *= max(len(values), 1)
+    if combos > MAX_GRID_COMBOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"grid too large: {combos} combos exceeds the {MAX_GRID_COMBOS} cap",
+        )
 
 
 def _equity_json(equity: pd.Series) -> dict:
@@ -65,8 +98,8 @@ def backtest(req: BacktestRequest) -> dict:
     try:
         data = _load(req.symbol, req.start, req.timeframe)
         res = VectorBTEngine(cash=req.cash).run(strat, data, timeframe=req.timeframe)
-    except Exception as exc:  # data/network/engine failures -> 500 with the message
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    except Exception as exc:  # data/network/engine failures -> 500 (message redacted)
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
     from quant.backtest.metrics import alpha_beta, trade_stats, yearly_returns
 
@@ -102,7 +135,7 @@ def portfolio(req: PortfolioRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
     return {
         "init_cash": res.init_cash,
@@ -126,11 +159,12 @@ def sweep_endpoint(req: SweepRequest) -> dict:
         cls = get_strategy_cls(req.strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _check_grid_size(req.grid)
     try:
         data = _load(req.symbol, req.start, req.timeframe)
         results = sweep(cls, data, grid=req.grid or None, sort_by=req.sort_by, timeframe=req.timeframe)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
     return {
         "sort_by": req.sort_by,
@@ -149,12 +183,13 @@ def walkforward_endpoint(req: WalkforwardRequest) -> dict:
         cls = get_strategy_cls(req.strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _check_grid_size(req.grid)
     try:
         data = _load(req.symbol, req.start, req.timeframe)
         wf = walk_forward(cls, data, grid=req.grid or None, train_bars=req.train_bars,
                           test_bars=req.test_bars, sort_by=req.sort_by, timeframe=req.timeframe)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
     return {"folds": _records(wf.round(3)), "summary": summarize(wf)}
 

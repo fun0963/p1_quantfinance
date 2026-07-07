@@ -101,6 +101,37 @@ def test_walkforward_returns_folds_and_summary(monkeypatch):
     assert isinstance(body["folds"], list)
 
 
+def test_500_error_redacts_dsn_password(monkeypatch):
+    import quant.web.routes as routes
+
+    def boom(*a, **k):
+        raise RuntimeError("connect failed: postgresql://quant:secretpass@db:5432/quant")
+
+    monkeypatch.setattr(routes, "_load", boom)
+    r = client.post("/api/backtest", json={"symbol": "SPY", "strategy": "momentum",
+                                           "params": {"lookback": 50}})
+    assert r.status_code == 500
+    detail = r.json()["detail"]
+    assert "secretpass" not in detail       # password redacted
+    assert "***" in detail                   # ...but the shape is still shown
+    assert "postgresql://quant:" in detail   # non-secret context preserved
+
+
+def test_sweep_rejects_oversized_grid():
+    # 71 * 71 = 5041 combos, over the 5000 cap -> 400 before any data load.
+    grid = {"fast": list(range(1, 72)), "slow": list(range(1, 72))}
+    r = client.post("/api/sweep", json={"symbol": "SPY", "strategy": "ma_cross", "grid": grid})
+    assert r.status_code == 400
+    assert "grid too large" in r.json()["detail"]
+
+
+def test_walkforward_rejects_oversized_grid():
+    grid = {"lookback": list(range(1, 5002))}  # 5001 combos > cap
+    r = client.post("/api/walkforward", json={"symbol": "SPY", "strategy": "momentum", "grid": grid})
+    assert r.status_code == 400
+    assert "grid too large" in r.json()["detail"]
+
+
 def test_journal_endpoint_shape():
     r = client.get("/api/journal/sessions")
     assert r.status_code == 200 and "rows" in r.json()
