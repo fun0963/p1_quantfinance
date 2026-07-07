@@ -35,12 +35,19 @@ class AlpacaFeed(DataFeed):
         end: datetime | None = None,
         timeframe: str = "1d",
     ) -> pd.DataFrame:
+        # Validate before importing the optional dep: same trap as yfinance,
+        # don't silently downgrade an unknown timeframe to daily.
+        if timeframe not in _TIMEFRAME:
+            raise ValueError(
+                f"unsupported timeframe {timeframe!r} for alpaca; "
+                f"supported: {sorted(_TIMEFRAME)}"
+            )
+        amount, unit = _TIMEFRAME[timeframe]
+
         # Lazy imports keep alpaca-py optional until this feed is actually used.
         from alpaca.data.historical import StockHistoricalDataClient
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-
-        amount, unit = _TIMEFRAME.get(timeframe, ("1", "Day"))
         tf = TimeFrame(int(amount), getattr(TimeFrameUnit, unit))
 
         client = StockHistoricalDataClient(self._key, self._secret)

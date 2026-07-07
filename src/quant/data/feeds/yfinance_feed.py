@@ -27,9 +27,18 @@ class YFinanceFeed(DataFeed):
         end: datetime | None = None,
         timeframe: str = "1d",
     ) -> pd.DataFrame:
+        # Validate input before importing the optional dep or hitting the network:
+        # never silently downgrade an unknown timeframe to daily (a 5m request
+        # cached under a 1d key is a silent data error). Fail loud.
+        if timeframe not in _INTERVAL:
+            raise ValueError(
+                f"unsupported timeframe {timeframe!r} for yfinance; "
+                f"supported: {sorted(_INTERVAL)}"
+            )
+        interval = _INTERVAL[timeframe]
+
         import yfinance as yf  # imported lazily so the package stays optional
 
-        interval = _INTERVAL.get(timeframe, "1d")
         log.debug(f"yfinance fetch {symbol} {timeframe} from {start}")
         raw = with_retries(
             lambda: yf.download(
