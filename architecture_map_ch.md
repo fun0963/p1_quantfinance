@@ -184,7 +184,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | ~~2~~ | ✅ **timeframe 白名單**(`0e42de3`) | `yfinance_feed.py`、`alpaca_feed.py` | 已修:未知 tf 改嚴格查表 `raise`(檢查移到 lazy import 前);兩個 feed 都修 |
 | ~~3~~ | ✅ **parquet 原子寫入 + 備份**(`1bb9027`) | `storage/parquet_store.py` | 已修:temp→`os.replace` 原子覆蓋 + 覆蓋前複製 `.bak`;寫入失敗清 `.tmp` 保原檔 |
 | ~~4~~ | ✅ **web 500 遮蔽 DSN + grid 上限** | `web/routes.py` | 已修:`_safe_detail` regex 遮蔽 URL 憑證(`user:***@`)、完整訊息只記 server log;`MAX_GRID_COMBOS=5000` 展開前擋超大 grid 回 400 |
-| 5 | **20 處廣捕例外未分類** | 8 個檔的 `noqa: BLE001` | 多屬 ops best-effort(合理),但實盤路徑宜分類:網路(重試)/券商(告警停手)/資料(失敗) |
+| ~~5~~ | ⚪ **won't-fix(已評估)** | 8 個檔的 `noqa: BLE001` | 20 處經逐一盤點後全屬刻意 best-effort:告警/對帳/報告/OMS/排程監控/heartbeat 皆為「側線」,不變式硬性要求永不 raise(否則會阻斷主線交易與止損)。技術債想要的分類其實已達成:網路重試在 #1(feed 層)、券商真失敗由 `scheduler` job 總 handler 告警停手。把這些廣捕捉改窄=在安全護欄戳洞,風險 > 價值。**唯一可選微幅收斂**:`alpaca_broker.py:144` 改捕 Alpaca 特定例外(純美化,未做) |
 | 6 | **Backtrader 引擎未填 per-trade 記錄** | `backtest/backtrader_engine.py`(`trades=None`) | TCA / 逐筆分析在該引擎缺資料 |
 | 7 | **`live_log` 無索引** | `execution/journal.py` | 大量歷史查詢慢;高併發寫入即使 WAL 仍可能鎖 |
 | 8 | **AlpacaBroker 每次呼叫都建新 client** | `execution/alpaca_broker.py` | 高頻排程下可能觸發 rate-limit |
