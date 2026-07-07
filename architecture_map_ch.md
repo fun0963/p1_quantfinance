@@ -189,7 +189,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 | ~~7~~ | ✅ **`live_log` 加索引 + 過濾下推** | `execution/journal.py`、`cli.py` | 已修:加 `ix_live_log_symbol(symbol,strategy,id)`;`live_log()` 新增 symbol/strategy 過濾下推 SQL(EXPLAIN 驗證用到索引),drift 呼叫端改帶 symbol。順帶修正潛在正確性 bug:原本抓最新 1 萬列再 pandas 過濾,多標的混雜時可能漏掉目標標的較舊的 bar |
 | ~~8~~ | ✅ **AlpacaBroker 快取 client** | `execution/alpaca_broker.py` | 已修:`_client()` 改每個 broker 實例 lazy 快取一個 `TradingClient`(保留 HTTP 連線池),不再每次呼叫重建 |
 | ~~9~~ | ✅ **補測試缺口** | `tests/test_config.py`、`tests/test_cli.py` | 已修:新增 `test_config.py`(Settings 預設/env 覆蓋/lru_cache/ensure_dirs,hermetic)+ `test_cli.py`(parse 輔助單元 + `info`/`backtest` 經 CliRunner 端到端)。`asyncio_mode` 警告早已在 pyproject 設 `auto` 解決(該註記過時) |
-| 10 | **`walk_forward` / `portfolio` 寫死 VectorBT** | `backtest/walkforward.py`、`portfolio/portfolio.py` | 無法用 Backtrader 做 OOS/組合(引擎該可注入) |
+| ~~10~~ | ✅ **引擎可注入** | `backtest/walkforward.py`、`portfolio/portfolio.py`、`cli.py` | 已修:兩者新增 `engine_cls: type[BacktestEngine]=VectorBTEngine`;CLI `walkforward`/`portfolio` 接 `--engine`。walk_forward OOS 切片前正規化 tz(Backtrader 回 tz-naive);ABC `BacktestEngine.run` 補上 `timeframe` 契約。sweep 最佳化仍固定 VectorBT(向量化本是它的強項) |
 
 ---
 

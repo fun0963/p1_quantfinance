@@ -24,7 +24,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from quant.backtest.base import BacktestEngine
 from quant.backtest.metrics import compute_metrics
+from quant.backtest.vectorbt_engine import VectorBTEngine
 from quant.strategies.registry import get_strategy_cls
 from quant.utils import get_logger
 
@@ -70,14 +72,15 @@ def run_portfolio(
     start: str = "2020-01-01",
     timeframe: str = "1d",
     data_map: dict[str, pd.DataFrame] | None = None,
+    engine_cls: type[BacktestEngine] = VectorBTEngine,
 ) -> PortfolioResult:
     """Backtest each leg with its share of `cash` and combine into one curve.
 
     `data_map` lets callers (and tests) inject {symbol: OHLCV} to run offline;
     when omitted, each leg's bars are loaded via the normal data loader.
+    `engine_cls` picks the backtest engine (default VectorBT; pass
+    BacktraderEngine to run every leg through the event-driven engine).
     """
-    from quant.backtest.vectorbt_engine import VectorBTEngine
-
     if not legs:
         raise ValueError("portfolio needs at least one leg")
 
@@ -96,7 +99,7 @@ def run_portfolio(
             data = _load_symbol(leg.symbol, start, timeframe)
         strat = get_strategy_cls(leg.strategy)(**leg.params)
         leg_cash = cash * leg.weight
-        res = VectorBTEngine(cash=leg_cash).run(strat, data, timeframe=timeframe)
+        res = engine_cls(cash=leg_cash).run(strat, data, timeframe=timeframe)
         label = _leg_label(leg)
         leg_equities[label] = res.equity_curve.rename(label)
         leg_metrics[label] = res.metrics

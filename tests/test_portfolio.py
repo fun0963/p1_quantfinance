@@ -47,6 +47,15 @@ def test_run_portfolio_combines_legs():
     assert "sharpe" in res.metrics and "max_drawdown_pct" in res.metrics
 
 
+def test_run_portfolio_on_injected_backtrader_engine():
+    from quant.backtest.backtrader_engine import BacktraderEngine
+
+    res = run_portfolio(_legs(), cash=100_000, data_map=_data(), engine_cls=BacktraderEngine)
+    assert set(res.leg_metrics) == {"SPY:ma_cross", "QQQ:momentum"}
+    assert np.isfinite(res.equity_curve.iloc[-1])
+    assert "sharpe" in res.metrics
+
+
 def test_weights_are_normalized():
     legs = [PortfolioLeg("SPY", "ma_cross", {"fast": 5, "slow": 20}, weight=1),
             PortfolioLeg("QQQ", "momentum", {"lookback": 20}, weight=3)]

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from quant.backtest.base import BacktestEngine
 from quant.backtest.metrics import compute_metrics
 from quant.backtest.optimize import sweep
 from quant.backtest.vectorbt_engine import VectorBTEngine
@@ -38,8 +39,15 @@ def walk_forward(
     test_bars: int = 126,      # ~6 trading months
     sort_by: str = "sharpe",
     timeframe: str = "1d",
+    engine_cls: type[BacktestEngine] = VectorBTEngine,
 ) -> pd.DataFrame:
-    """Rolling-window walk-forward for any strategy. One row per fold."""
+    """Rolling-window walk-forward for any strategy. One row per fold.
+
+    `engine_cls` runs the out-of-sample evaluation (default VectorBT); pass
+    BacktraderEngine to score OOS on the event-driven, live-like engine. The
+    in-sample optimization always uses the vectorized `sweep` — scanning a grid
+    is VectorBT's job regardless of which engine confirms the survivor.
+    """
     n = len(data)
     if train_bars + test_bars > n:
         raise ValueError(
@@ -66,10 +74,15 @@ def walk_forward(
         warmup = strat.warmup_bars()
         lo = max(0, test_start - warmup)
         oos_slice = data.iloc[lo:test_end]
-        res = VectorBTEngine().run(strat, oos_slice, timeframe=timeframe)
+        res = engine_cls().run(strat, oos_slice, timeframe=timeframe)
 
         test_first_ts = data.index[test_start]
-        oos_equity = res.equity_curve.loc[test_first_ts:]
+        # Engines differ on index tz (Backtrader returns tz-naive); align to the
+        # data's tz before slicing by the tz-aware test timestamp.
+        eq = res.equity_curve
+        if eq.index.tz is None and data.index.tz is not None:
+            eq = eq.tz_localize(data.index.tz)
+        oos_equity = eq.loc[test_first_ts:]
         oos_entries = int(strat.generate_signals(oos_slice)["entries"].loc[test_first_ts:].sum())
         oos = compute_metrics(oos_equity, num_trades=oos_entries, timeframe=timeframe)
 

@@ -35,5 +35,9 @@ class BacktestEngine(ABC):
         self.fees = fees
 
     @abstractmethod
-    def run(self, strategy: BaseStrategy, data: pd.DataFrame) -> BacktestResult:
-        """Execute `strategy` on `data` and return a BacktestResult."""
+    def run(self, strategy: BaseStrategy, data: pd.DataFrame,
+            timeframe: str = "1d") -> BacktestResult:
+        """Execute `strategy` on `data` and return a BacktestResult.
+
+        `timeframe` (canonical, e.g. '1d') drives metric annualization; both
+        concrete engines accept it, so it is part of the interface contract."""

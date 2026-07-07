@@ -43,6 +43,18 @@ def test_walk_forward_raises_when_not_enough_history():
                      train_bars=200, test_bars=60)
 
 
+def test_walk_forward_runs_on_injected_backtrader_engine():
+    """OOS evaluation must work on the event-driven engine too — this exercises
+    the tz alignment (Backtrader returns a tz-naive equity index)."""
+    from quant.backtest.backtrader_engine import BacktraderEngine
+
+    data = _synthetic()
+    wf = walk_forward(MACrossStrategy, data, grid=_GRID, train_bars=200, test_bars=60,
+                      engine_cls=BacktraderEngine)
+    assert len(wf) > 1
+    assert wf["oos_sharpe"].notna().any()  # OOS scored via the injected engine
+
+
 def test_summarize_keys():
     data = _synthetic()
     wf = walk_forward(MACrossStrategy, data, grid=_GRID,

@@ -93,6 +93,17 @@ def _live_broker(broker: str):
     return AlpacaBroker()
 
 
+def _engine_cls(name: str):
+    """Resolve an engine name to its class for backtest-driven commands."""
+    from quant.backtest.backtrader_engine import BacktraderEngine
+    from quant.backtest.vectorbt_engine import VectorBTEngine
+
+    engines = {"vectorbt": VectorBTEngine, "backtrader": BacktraderEngine}
+    if name not in engines:
+        raise typer.BadParameter(f"engine must be one of {sorted(engines)}")
+    return engines[name]
+
+
 # --- commands ---------------------------------------------------------------
 @app.callback()
 def _init() -> None:
@@ -495,6 +506,8 @@ def walkforward(
     train_bars: int = typer.Option(504, help="train window length (bars)"),
     test_bars: int = typer.Option(126, help="test window length (bars)"),
     sort_by: str = typer.Option("sharpe"),
+    engine: str = typer.Option("vectorbt", help="OOS engine: vectorbt | backtrader "
+                                                 "(optimization always uses vectorbt)"),
 ) -> None:
     """Walk-forward validation: optimize on train, score on unseen test, roll forward."""
     from quant.backtest.walkforward import summarize, walk_forward
@@ -504,7 +517,7 @@ def walkforward(
     data = _load(symbol, start, timeframe)
     wf = walk_forward(strat_cls, data, grid=_parse_grid(grid),
                       train_bars=train_bars, test_bars=test_bars, sort_by=sort_by,
-                      timeframe=timeframe)
+                      timeframe=timeframe, engine_cls=_engine_cls(engine))
 
     typer.echo(f"\nWalk-forward [{strategy}] on {symbol}: {len(wf)} folds "
                f"(train={train_bars}, test={test_bars} bars)\n")
@@ -532,6 +545,7 @@ def portfolio(
     cash: float = typer.Option(100_000),
     start: str = typer.Option("2020-01-01", help="YYYY-MM-DD"),
     timeframe: str = typer.Option("1d"),
+    engine: str = typer.Option("vectorbt", help="backtest engine: vectorbt | backtrader"),
     plot: bool = typer.Option(False, "--plot", help="save a combined+legs equity HTML"),
 ) -> None:
     """Allocate capital across several strategies and report the blended result.
@@ -551,7 +565,8 @@ def portfolio(
     else:
         raise typer.BadParameter("give --config FILE or --legs '...'")
 
-    res = run_portfolio(leg_list, cash=cash, start=start, timeframe=timeframe)
+    res = run_portfolio(leg_list, cash=cash, start=start, timeframe=timeframe,
+                        engine_cls=_engine_cls(engine))
 
     typer.echo(f"\n[PORTFOLIO {name}]  {len(res.legs)} legs, init cash {res.init_cash:,.0f}, "
                f"from {start} ({timeframe})")
