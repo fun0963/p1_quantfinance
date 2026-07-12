@@ -1,7 +1,7 @@
 # 系統架構地圖 — p1_quantfinance
 
 > **這份文件給誰**:接手本專案的人或 AI agent。讀完可在不翻遍原始碼的情況下,知道「東西放哪、為什麼這樣分層、已完成什麼、接下來做什麼、有哪些坑」。
-> **最後更新**:2026-07-07(Batch 1 完成、Batch 2 開工後)。維護方式:動到架構/新增 package 時更新本檔;細部進度以 [audit_and_roadmap_ch.md](audit_and_roadmap_ch.md) 為準。
+> **最後更新**:2026-07(技術債清理 + 成本模型 + 實驗記錄 + 架構清理後)。維護方式:動到架構/新增 package 時更新本檔;細部進度以 [audit_and_roadmap_ch.md](audit_and_roadmap_ch.md) 為準。
 
 ---
 
@@ -11,10 +11,10 @@
 
 | 指標 | 數值 |
 |---|---|
-| 原始碼 | 59 個 `.py`、約 5,500 LOC(`src/quant/`) |
-| 測試 | 26 個測試檔、**143 passed / 1 skipped**;ruff + mypy 全綠 |
+| 原始碼 | 64 個 `.py`、約 6,200 LOC(`src/quant/` + `config/`) |
+| 測試 | 34 個測試檔、**200 passed / 1 skipped**;ruff + mypy 全綠 |
 | Python | 3.11+(開發環境 3.13);`src/` layout,套件名 `quant` |
-| 進入點 | `quant` CLI(typer,20+ 指令)+ FastAPI 唯讀儀表盤 |
+| 進入點 | `quant` CLI(typer,22 指令)+ FastAPI 唯讀儀表盤 |
 | 架構評分 | 分層/耦合 **8/10**、測試/CI **8/10**、可維護性 **7/10**(已修正,見 §7) |
 
 ---
