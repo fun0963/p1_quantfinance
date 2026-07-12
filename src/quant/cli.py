@@ -76,12 +76,9 @@ def _parse_legs(spec: str) -> list:
 
 
 def _load(symbol: str, start: str, timeframe: str, no_cache: bool = False):
-    from quant.data.feeds.yfinance_feed import YFinanceFeed
-    from quant.data.loaders import load_bars
+    from quant.data.loaders import fetch_bars
 
-    start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
-    return load_bars(symbol, YFinanceFeed(), start=start_dt, timeframe=timeframe,
-                     use_cache=not no_cache)
+    return fetch_bars(symbol, start, timeframe, use_cache=not no_cache)
 
 
 def _live_broker(broker: str):
@@ -547,7 +544,8 @@ def sweep(
     heatmap: bool = typer.Option(True, help="save a heatmap PNG under reports/"),
 ) -> None:
     """Vectorized parameter sweep over a strategy's grid; prints the top combos."""
-    from quant.backtest.optimize import save_heatmap, sweep
+    from quant.backtest.optimize import sweep
+    from quant.backtest.plots import plot_heatmap
     from quant.strategies.registry import get_strategy_cls
 
     strat_cls = get_strategy_cls(strategy)
@@ -570,7 +568,7 @@ def sweep(
 
     if heatmap:
         try:
-            path = save_heatmap(results, metric=sort_by,
+            path = plot_heatmap(results, metric=sort_by,
                                 out_path=f"reports/heatmap_{symbol}_{strategy}_{sort_by}.html",
                                 title=f"{symbol} {strategy} - {sort_by}")
             typer.echo(f"Heatmap saved -> {path}")

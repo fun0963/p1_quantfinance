@@ -9,13 +9,11 @@ the Backtrader engine — and to walk-forward — for honest confirmation.
 from __future__ import annotations
 
 from itertools import product
-from pathlib import Path
 
 import pandas as pd
 
 from quant.backtest.metrics import compute_metrics
 from quant.strategies.base import BaseStrategy
-from quant.strategies.ma_cross import MACrossStrategy
 from quant.utils import get_logger
 
 log = get_logger(__name__)
@@ -103,37 +101,3 @@ def sweep(
     return results.sort_values(sort_by, ascending=ascending)
 
 
-def sweep_ma_cross(
-    data: pd.DataFrame,
-    fasts: list[int],
-    slows: list[int],
-    cash: float = 100_000,
-    fees: float = 0.0005,
-    sort_by: str = "sharpe",
-    timeframe: str = "1d",
-) -> pd.DataFrame:
-    """Back-compat convenience wrapper around `sweep` for MA-cross."""
-    return sweep(
-        MACrossStrategy,
-        data,
-        grid={"fast": fasts, "slow": slows},
-        cash=cash,
-        fees=fees,
-        sort_by=sort_by,
-        timeframe=timeframe,
-    )
-
-
-def save_heatmap(
-    results: pd.DataFrame,
-    metric: str = "sharpe",
-    x_param: str | None = None,
-    y_param: str | None = None,
-    out_path: str | Path = "reports/sweep_heatmap.html",
-    title: str | None = None,
-) -> Path:
-    """Back-compat wrapper → interactive plotly heatmap (HTML, no native deps)."""
-    from quant.backtest.plots import plot_heatmap
-
-    return plot_heatmap(results, metric=metric, x_param=x_param, y_param=y_param,
-                        out_path=out_path, title=title)

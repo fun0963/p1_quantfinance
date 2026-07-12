@@ -52,7 +52,7 @@
 └───────────────┬─────────────────────────────────────────────────┘
                 ▼
 ┌─ 基礎 ────────────────────────────────────────────────────────┐
-│  core/types(Bar·Signal·Order)   config/(settings)   utils/(log)  │
+│  core/types(Signal·Order)      config/(settings)   utils/(log)  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,7 +67,7 @@
 | **ABC 介面 + 可抽換實作** | `DataFeed`、`BarStore`、`Broker`、`BacktestEngine`、`BaseStrategy`、`RiskManager`、`Notifier` | 換資料源 / 券商 / 回測引擎 / 儲存後端 = 改設定,不改呼叫端。已實證可換。 |
 | **設定驅動工廠** | `get_store()`(Parquet/Timescale)、`get_notifier()`(Telegram/log/null)、`get_strategy_cls()`(策略登錄表)、`_build_broker()`/`_live_broker()`(Alpaca/Paper) | 具體實作由 env 設定決定,呼叫端只拿介面。 |
 | **依賴注入(建構子/參數)** | `run_paper_session` / `run_live_step` / `live_and_journal` 都可注入 broker / risk / gate / notifier / data | 測試時注入 `PaperBroker` + `NullNotifier` + 合成資料,完全離線、零 API key。 |
-| **provider-agnostic 型別** | `core/types`(Bar/Signal/Order)不 import 任何第三方 | 策略與風控無論回測或實盤都用同一組型別。 |
+| **provider-agnostic 型別** | `core/types`(Signal/Order)不 import 任何第三方;價格資料以 OHLCV DataFrame(`DataFeed.COLUMNS`)流動 | 策略與風控無論回測或實盤都用同一組型別。 |
 | **失敗預設安全(fail-safe)** | 實盤下單前先 reconcile、過期資料拒單、無訊號不清倉、止損永遠出得掉、營運寫入 best-effort 不阻斷交易、告警永不 crash | 見 §7 的 Batch 0 安全修復。 |
 | **唯讀分析物件** | `ReconcileReport` / `TCAReport` / `HealthReport` / `DriftReport` / `QualityReport` / `MutationReport`,都有 `.summary()` 與 `.ok`/`.mutated` 布林 | 分析層只回報,由呼叫端決定停/告警,不產生副作用。 |
 | **狀態機 + 稽核軌跡** | `ops/oms.py`:`OrderState` + 合法轉移表 + 附加式 `order_events` | 訂單生命週期可追;非法轉移拒絕並記錄,絕不默默套用。 |
@@ -81,7 +81,7 @@
 | 資料夾 | 職責 | 關鍵檔案與公開 API | 主要依賴 | 測試 |
 |---|---|---|---|---|
 | **config/** | 單一設定來源(pydantic-settings + `.env`) | `settings.py`:`Settings`、`get_settings()`(lru_cache 單例)。含 Alpaca 金鑰、`STORAGE_BACKEND`、Telegram 告警、路徑 | — | 無專屬(被各層間接測到) |
-| **quant/core/** | 全系統共通型別與事件 | `types.py`:`Bar`/`Signal`/`Order` + `OrderSide`/`OrderType`/`SignalType`(frozen dataclass + Enum);`events.py`:live 事件信封(已備妥、尚未接 dispatcher) | 無 | 間接(smoke/gate/paper) |
+| **quant/core/** | 全系統共通型別 | `types.py`:`Signal`/`Order` + `OrderSide`/`OrderType`/`SignalType`(frozen dataclass + Enum)。~~`events.py`~~ 與 ~~`Bar`~~ 已於架構清理移除(零引用死碼;實際管線以 DataFrame 流動) | 無 | 間接(smoke/gate/paper) |
 | **quant/utils/** | 集中式 loguru 日誌 | `logging.py`:`setup_logging()`(一次性)、`get_logger()` | loguru | 間接 |
 | **quant/data/** | 行情擷取 + 儲存 + 快取 + 品質 + 完整性 | `feeds/`(`DataFeed` ABC → `YFinanceFeed`/`AlpacaFeed`);`storage/`(`BarStore` ABC → `ParquetStore`/`TimescaleStore` + `get_store()` 工廠);`loaders.py`:`load_bars()`(快取+新鮮度+品質+改寫偵測);`quality.py`:`check_bars()`;`integrity.py`:`detect_history_mutation()`(point-in-time 護欄) | core、config | `test_storage/test_loaders/test_quality/test_integrity` |
 | **quant/strategies/** | 純訊號邏輯(引擎無關) | `base.py`:`BaseStrategy` ABC(`generate_signals→entries/exits`、`default_grid`、`params_valid`、`warmup_bars`);`ma_cross.py`、`momentum.py`;`registry.py`:`get_strategy_cls()`/`available()` | core | `test_strategies/test_momentum_and_registry` |

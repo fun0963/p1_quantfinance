@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from quant.backtest.optimize import sweep_ma_cross
+from quant.backtest.optimize import sweep
 from quant.backtest.vectorbt_engine import VectorBTEngine
 from quant.strategies.ma_cross import MACrossStrategy
 
@@ -27,7 +27,7 @@ def _synthetic(n: int = 400, seed: int = 7) -> pd.DataFrame:
 
 def test_sweep_returns_only_valid_combos_ranked():
     data = _synthetic()
-    res = sweep_ma_cross(data, fasts=[5, 10, 20], slows=[30, 50], sort_by="sharpe")
+    res = sweep(MACrossStrategy, data, grid={"fast": [5, 10, 20], "slow": [30, 50]}, sort_by="sharpe")
     assert (res["fast"] < res["slow"]).all()          # only valid combos
     assert res["sharpe"].is_monotonic_decreasing       # ranked best-first
     assert list(res.columns) == [
@@ -38,7 +38,7 @@ def test_sweep_returns_only_valid_combos_ranked():
 def test_sweep_metric_matches_single_backtest():
     # The headline regression test: sweep's best row == an independent backtest.
     data = _synthetic()
-    res = sweep_ma_cross(data, fasts=[5, 10], slows=[30, 50], sort_by="sharpe")
+    res = sweep(MACrossStrategy, data, grid={"fast": [5, 10], "slow": [30, 50]}, sort_by="sharpe")
     best = res.iloc[0]
 
     single = VectorBTEngine().run(

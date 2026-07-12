@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -152,11 +151,10 @@ def _weighted_avg_sharpe(legs: list[PortfolioLeg], leg_metrics: dict[str, dict])
 
 
 def _load_symbol(symbol: str, start: str, timeframe: str) -> pd.DataFrame:
-    from quant.data.feeds.yfinance_feed import YFinanceFeed
-    from quant.data.loaders import load_bars
+    # Module-level indirection kept as the tests' monkeypatch seam.
+    from quant.data.loaders import fetch_bars
 
-    start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
-    return load_bars(symbol, YFinanceFeed(), start=start_dt, timeframe=timeframe)
+    return fetch_bars(symbol, start, timeframe)
 
 
 # --- config (JSON) ---------------------------------------------------------

@@ -2,6 +2,8 @@
 
 `load_bars` is the one-call way the CLI / notebooks get price data: serve from
 the local parquet store if present, otherwise download once and cache it.
+`fetch_bars` is the string-friendly wrapper the entrypoints (CLI, web, portfolio)
+share, so the "ISO date + default feed" plumbing lives in exactly one place.
 """
 from __future__ import annotations
 
@@ -105,3 +107,19 @@ def _slice_from(df: pd.DataFrame, start: datetime) -> pd.DataFrame:
     elif df.index.tz is None and sd.tz is not None:
         sd = sd.tz_localize(None)
     return df[df.index >= sd]
+
+
+def fetch_bars(
+    symbol: str,
+    start: str = "2020-01-01",
+    timeframe: str = "1d",
+    use_cache: bool = True,
+) -> pd.DataFrame:
+    """`load_bars` with the entrypoint-friendly signature: ISO date string and the
+    default research feed (yfinance). CLI / web / portfolio all funnel through
+    here instead of each re-implementing the date parsing + feed construction."""
+    from quant.data.feeds.yfinance_feed import YFinanceFeed
+
+    start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
+    return load_bars(symbol, YFinanceFeed(), start=start_dt, timeframe=timeframe,
+                     use_cache=use_cache)

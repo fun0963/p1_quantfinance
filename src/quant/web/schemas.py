@@ -1,8 +1,8 @@
-"""Pydantic request/response contracts for the dashboard API.
+"""Pydantic request contracts for the dashboard API.
 
 Requests are validated + surfaced as forms in `/docs`. Responses are kept as
-plain dicts in routes for flexibility, but the equity-curve shape is documented
-here so the frontend knows what to plot.
+plain dicts in routes for flexibility (the equity-curve shape the frontend
+plots is `{dates: [...], values: [...]}` — see `_equity_json` in routes).
 """
 from __future__ import annotations
 
@@ -53,9 +53,3 @@ class WalkforwardRequest(BaseModel):
     train_bars: int = 504
     test_bars: int = 126
     sort_by: str = "sharpe"
-
-
-class EquityCurve(BaseModel):
-    """Plot-ready equity curve: parallel date/value arrays."""
-    dates: list[str]
-    values: list[float]

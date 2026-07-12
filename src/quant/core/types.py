@@ -1,8 +1,9 @@
 """Domain types — the lingua franca passed between layers.
 
-Strategies emit `Signal`s; execution turns them into `Order`s; data feeds yield
-`Bar`s. Keeping these provider-agnostic is what lets us swap Alpaca/yfinance or
-VectorBT/Backtrader without touching strategy code.
+Strategies emit `Signal`s; execution turns them into `Order`s. Keeping these
+provider-agnostic is what lets us swap Alpaca/yfinance or VectorBT/Backtrader
+without touching strategy code. (Price data itself travels as a tidy OHLCV
+DataFrame — see `DataFeed.COLUMNS` — not as per-bar objects.)
 """
 from __future__ import annotations
 
@@ -26,18 +27,6 @@ class SignalType(str, Enum):
     EXIT_LONG = "exit_long"
     ENTRY_SHORT = "entry_short"
     EXIT_SHORT = "exit_short"
-
-
-@dataclass(frozen=True, slots=True)
-class Bar:
-    """A single OHLCV candle for one symbol."""
-    symbol: str
-    timestamp: datetime
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
 
 
 @dataclass(frozen=True, slots=True)

@@ -47,10 +47,10 @@ sits behind a clean interface, and order routing is paper-only + dry-run by defa
  │ Storage │  └──────────┘    └────────────┘    └────────────┘   └──────────┘
  │ └Parquet│        │                │                │               │
  └─────────┘        └────────────────┴────────────────┴───────────────┘
-                       shared core: types · events · utils(logging)
+                       shared core: types · utils(logging)
 
  Research flow :  DataFeed ─▶ Strategy ─▶ VectorBT ─▶ (survivors) ─▶ Backtrader
- Live  flow    :  MarketEvent ─▶ Strategy ─▶ Risk ─▶ Order ─▶ Broker ─▶ Fill   (phase 3)
+ Live  flow    :  Bars ─▶ Strategy ─▶ Risk ─▶ Order ─▶ Broker ─▶ Fill
 ```
 
 ### Directory layout
@@ -59,7 +59,7 @@ sits behind a clean interface, and order routing is paper-only + dry-run by defa
 p1_quantfinance/
 ├── config/                 # pydantic settings (single source of truth)
 ├── src/quant/
-│   ├── core/               # domain types (Bar/Signal/Order) + events
+│   ├── core/               # domain types (Signal/Order)
 │   ├── data/
 │   │   ├── feeds/          # DataFeed abstract + Alpaca / yfinance adapters
 │   │   ├── storage/        # BarStore interface: ParquetStore | TimescaleStore (get_store)
@@ -187,7 +187,7 @@ above). Secrets stay local: `.env`, `data/`, `logs/`, the `.venv/`, and the bulk
 - [x] Scheduling (`quant schedule`, APScheduler) + Windows Task Scheduler wrapper
       (`scripts/daily_live.ps1`) — runs the live step each weekday after close; idempotent
       (target-state reconcile), dry-run default. See [docs/SCHEDULING.md](docs/SCHEDULING.md).
-- [ ] (optional) websocket/intraday feed over `core/events.py`; alerting on fills
+- [ ] (optional) websocket/intraday feed; alerting on fills
 
 > `quant paper SPY --strategy momentum --plot` → full pipeline runs offline (paper
 > broker). `--max-position-notional` / `--max-daily-loss` engage the risk gate;
