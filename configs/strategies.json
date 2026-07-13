@@ -1,0 +1,32 @@
+{
+  "spy_momentum": {
+    "symbol": "SPY",
+    "strategy": "momentum",
+    "params": {"lookback": 100},
+    "timeframe": "1d",
+    "start": "2020-01-01",
+    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000},
+    "lifecycle": {
+      "state": "paper",
+      "eval_bars": 252,
+      "min_rolling_sharpe": 0.0,
+      "max_drawdown_pct": -25.0,
+      "min_trades": 1
+    }
+  },
+  "qqq_ma_cross": {
+    "symbol": "QQQ",
+    "strategy": "ma_cross",
+    "params": {"fast": 20, "slow": 50},
+    "timeframe": "1d",
+    "start": "2020-01-01",
+    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000},
+    "lifecycle": {
+      "state": "research",
+      "eval_bars": 252,
+      "min_rolling_sharpe": -0.5,
+      "max_drawdown_pct": -30.0,
+      "min_trades": 1
+    }
+  }
+}

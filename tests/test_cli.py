@@ -109,6 +109,35 @@ def test_backtest_calibrate_from_tca(monkeypatch):
     assert "fees 1.0 bps" in r.output and "slippage 8.0 bps" in r.output
 
 
+def test_backtest_from_spec(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["backtest", "--spec", "spy_momentum",
+                                "--engine", "vectorbt", "--no-log"])
+    assert r.exit_code == 0, r.output
+    assert "SPY" in r.output and "momentum" in r.output  # spec supplied both
+
+
+def test_backtest_without_symbol_or_spec_errors():
+    r = runner.invoke(cli.app, ["backtest", "--engine", "vectorbt", "--no-log"])
+    assert r.exit_code != 0
+    assert "SYMBOL or --spec" in r.output
+
+
+def test_lifecycle_command_all_specs(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic(n=400))
+    r = runner.invoke(cli.app, ["lifecycle", "--all"])
+    # Both committed specs evaluated, each with an explicit verdict.
+    assert "spy_momentum" in r.output and "qqq_ma_cross" in r.output
+    assert "HOLD" in r.output or "RETIRE-REVIEW" in r.output
+    assert r.exit_code in (0, 1)                   # exit code mirrors breach status
+
+
+def test_lifecycle_unknown_spec_errors():
+    r = runner.invoke(cli.app, ["lifecycle", "does_not_exist"])
+    assert r.exit_code == 1
+    assert "available" in r.output
+
+
 def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
 

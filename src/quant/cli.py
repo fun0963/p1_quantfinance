@@ -338,7 +338,9 @@ def check(
 
 @app.command()
 def backtest(
-    symbol: str,
+    symbol: str = typer.Argument("", help="ticker (optional when --spec provides one)"),
+    spec: str = typer.Option("", help="named spec from configs/strategies.json - fills "
+                                      "symbol/strategy/params/start/timeframe"),
     strategy: str = typer.Option("ma_cross", help="strategy name (see `quant info`)"),
     params: str = typer.Option("", help="e.g. 'fast=20,slow=50' (default: strategy defaults)"),
     start: str = typer.Option("2020-01-01", help="YYYY-MM-DD"),
@@ -363,8 +365,19 @@ def backtest(
     from quant.backtest.vectorbt_engine import VectorBTEngine
     from quant.strategies.registry import get_strategy_cls
 
+    parsed = _parse_params(params)
+    if spec:
+        from quant.strategies.spec import get_spec
+
+        sp = get_spec(spec)
+        symbol = symbol or sp.symbol       # explicit ticker still wins
+        strategy, parsed = sp.strategy, sp.params
+        start, timeframe = sp.start, sp.timeframe
+    if not symbol:
+        raise typer.BadParameter("give a SYMBOL or --spec NAME")
+
     data = _load(symbol, start, timeframe, no_cache)
-    strat = get_strategy_cls(strategy)(**_parse_params(params))
+    strat = get_strategy_cls(strategy)(**parsed)
 
     if calibrate:
         # Close the loop: charge the backtest what live execution actually cost.
@@ -396,7 +409,6 @@ def backtest(
     if log_experiment:
         from quant.research import ExperimentStore, log_backtest
 
-        parsed = _parse_params(params)
         with ExperimentStore() as store:
             ids = [log_backtest(store, r, symbol=symbol, strategy=strategy, params=parsed,
                                 start=start, timeframe=timeframe, cost=cost, data=data, notes=note)
@@ -458,6 +470,52 @@ def experiments(
             return
         typer.echo(f"\n{len(df)} recent experiment(s):\n")
         typer.echo(df.to_string(index=False))
+
+
+@app.command()
+def lifecycle(
+    name: str = typer.Argument("", help="spec name (blank + --all = every spec)"),
+    all_specs: bool = typer.Option(False, "--all", help="evaluate every spec in the file"),
+    config: str = typer.Option("", help="spec file (default: configs/strategies.json)"),
+) -> None:
+    """Pre-committed promote/retire health check for named strategy specs.
+
+    Runs each spec on its recent data window and evaluates the lifecycle rules
+    written IN the spec (rolling-Sharpe floor, drawdown floor, min activity).
+    Exit code 1 if any spec breaches - scriptable as a scheduled health gate."""
+    from quant.backtest.vectorbt_engine import VectorBTEngine
+    from quant.research import LifecycleRules, check_lifecycle
+    from quant.strategies.registry import get_strategy_cls
+    from quant.strategies.spec import load_specs
+
+    specs = load_specs(config or None)
+    if all_specs:
+        chosen = list(specs.values())
+    elif name:
+        if name not in specs:
+            typer.echo(f"no spec named {name!r}; available: {sorted(specs)}")
+            raise typer.Exit(code=1)
+        chosen = [specs[name]]
+    else:
+        raise typer.BadParameter("give a spec NAME or --all")
+
+    any_breach = False
+    for sp in chosen:
+        data = _load(sp.symbol, sp.start, sp.timeframe)
+        strat = get_strategy_cls(sp.strategy)(**sp.params)
+        res = VectorBTEngine().run(strat, data, timeframe=sp.timeframe)
+        rules = LifecycleRules.from_dict(sp.lifecycle)
+        # Activity is judged on the same trailing window as the risk rules.
+        window_start = data.index[max(0, len(data) - rules.eval_bars)]
+        trades = int(strat.generate_signals(data)["entries"].loc[window_start:].sum())
+        rep = check_lifecycle(sp.name, state=sp.state, equity=res.equity_curve,
+                              num_trades=trades, rules=rules, timeframe=sp.timeframe)
+        typer.echo(rep.summary())
+        for b in rep.breaches:
+            typer.echo(f"  breach: {b}")
+        any_breach = any_breach or not rep.ok
+
+    raise typer.Exit(code=1 if any_breach else 0)
 
 
 @app.command()

@@ -11,10 +11,10 @@
 
 | 指標 | 數值 |
 |---|---|
-| 原始碼 | 64 個 `.py`、約 6,200 LOC(`src/quant/` + `config/`) |
-| 測試 | 34 個測試檔、**200 passed / 1 skipped**;ruff + mypy 全綠 |
+| 原始碼 | 66 個 `.py`、約 6,450 LOC(`src/quant/` + `config/`) |
+| 測試 | 35 個測試檔、**216 passed / 1 skipped**;ruff + mypy 全綠 |
 | Python | 3.11+(開發環境 3.13);`src/` layout,套件名 `quant` |
-| 進入點 | `quant` CLI(typer,22 指令)+ FastAPI 唯讀儀表盤 |
+| 進入點 | `quant` CLI(typer,24 指令)+ FastAPI 唯讀儀表盤 |
 | 架構評分 | 分層/耦合 **8/10**、測試/CI **8/10**、可維護性 **7/10**(已修正,見 §7) |
 
 ---
@@ -84,15 +84,15 @@
 | **quant/core/** | 全系統共通型別 | `types.py`:`Signal`/`Order` + `OrderSide`/`OrderType`/`SignalType`(frozen dataclass + Enum)。~~`events.py`~~ 與 ~~`Bar`~~ 已於架構清理移除(零引用死碼;實際管線以 DataFrame 流動) | 無 | 間接(smoke/gate/paper) |
 | **quant/utils/** | 集中式 loguru 日誌 | `logging.py`:`setup_logging()`(一次性)、`get_logger()` | loguru | 間接 |
 | **quant/data/** | 行情擷取 + 儲存 + 快取 + 品質 + 完整性 | `feeds/`(`DataFeed` ABC → `YFinanceFeed`/`AlpacaFeed`);`storage/`(`BarStore` ABC → `ParquetStore`/`TimescaleStore` + `get_store()` 工廠);`loaders.py`:`load_bars()`(快取+新鮮度+品質+改寫偵測);`quality.py`:`check_bars()`;`integrity.py`:`detect_history_mutation()`(point-in-time 護欄) | core、config | `test_storage/test_loaders/test_quality/test_integrity` |
-| **quant/strategies/** | 純訊號邏輯(引擎無關) | `base.py`:`BaseStrategy` ABC(`generate_signals→entries/exits`、`default_grid`、`params_valid`、`warmup_bars`);`ma_cross.py`、`momentum.py`;`registry.py`:`get_strategy_cls()`/`available()` | core | `test_strategies/test_momentum_and_registry` |
+| **quant/strategies/** | 純訊號邏輯(引擎無關)+ 具名規格 | `base.py`:`BaseStrategy` ABC(`generate_signals→entries/exits`、`default_grid`、`params_valid`、`warmup_bars`);`ma_cross.py`、`momentum.py`;`registry.py`:`get_strategy_cls()`/`available()`;`spec.py`:`StrategySpec`/`load_specs()`(**參數外部化 M6.3**,讀 `configs/strategies.json`:params/risk/lifecycle 規則全進版控) | core、config | `test_strategies/test_momentum_and_registry/test_lifecycle` |
 | **quant/risk/** | 下單前 sizing + 否決 + 出場保護 | `base.py`:`RiskManager` ABC → `FixedFractionRisk`;`gate.py`:`RiskGate`(部位/名目/日虧上限 + kill-switch;**降險賣單永遠放行**);`bracket.py`:`Bracket`/`BracketConfig`(停損停利、可 trailing) | core | `test_gate`(4)、`test_bracket`(8) |
 | **quant/backtest/** | 雙引擎回測 + 指標 + 掃描 + walk-forward + 成本模型 + 報告 | `base.py`:`BacktestEngine` ABC(`cash/fees/slippage`)+ `BacktestResult`;`vectorbt_engine.py`(向量化,研究/掃描)、`backtrader_engine.py`(事件驅動,擬真;slippage 併入 commission);`costs.py`:`CostModel`(fees+slippage,`from_tca()` 用實盤 TCA 校準);`metrics.py`:`compute_metrics`(含 Sharpe/**Sortino/Calmar**)/`trade_stats`/`alpha_beta`/`yearly_returns`/**`monthly_returns`**;`optimize.py`:`sweep()`;`walkforward.py`;`plots.py`(plotly);**`report.py`:`build_report()` 一鍵 HTML tear sheet(指標表+淨值+回撤+月報酬熱圖,自包含)** | strategies、data、core | `test_metrics/test_optimize/test_walkforward/test_plots/test_regression/test_costs/test_report` |
 | **quant/execution/** | 下單、部位生命週期、稽核軌跡 | `base.py`:`Broker` ABC + `Position`;`paper_broker.py`(同步成交模擬 + `order_status`)、`alpaca_broker.py`(paper 端點 + bracket/OCO + `day_pnl` + `order_status`);`session.py`:`run_paper_session`;`live_runner.py`:`run_live_step`(單根 K 決策 + 新鮮度閘 + target/signal 模式);`scheduler.py`:`live_and_journal`(可排程單元)+ `run_schedule`(APScheduler);`journal.py`:`TradeJournal`(SQLite WAL,sessions/fills/blocked/live_log/orders/order_events/heartbeats) | risk、strategies、data、ops、core | `test_paper/test_live_runner/test_live_brackets/test_journal/test_scheduler` |
 | **quant/ops/** | 無人值守營運後盾(Batch 1) | `notify.py`(`Notifier` ABC + Telegram/log/null + `get_notifier`);`reconcile.py`(帳 vs journal,CRITICAL 停手);`oms.py`(訂單狀態機 + `sync(broker)`);`tca.py`(訊號價 vs 成交價滑價);`health.py`(heartbeat + 漏跑/時鐘偏移偵測);`drift.py`(回測預期 vs 實盤實際);`report.py`(每日整合報告) | execution.journal/base、data、core | `test_ops/test_oms/test_tca/test_health/test_drift` |
 | **quant/portfolio/** | 多策略權重配置與混合回測 | `portfolio.py`:`PortfolioLeg`/`PortfolioResult`/`run_portfolio()`/`load_portfolio_config()`;算混合 vs 加權平均、腿間相關、分散化比率 | backtest、strategies、data | `test_portfolio` |
-| **quant/research/** | 研究框架(M4)— 目前:實驗記錄系統 | `experiments.py`:`ExperimentStore`(SQLite `data/experiments.db`,WAL)記錄每次回測(git-hash/dirty、參數、資料窗、成本 bps、指標);`git_revision()`;`log_backtest()`。防過擬合的制度防線。未來因子框架也放這 | config、utils(僅;duck-type 收 result/cost) | `test_experiments` |
+| **quant/research/** | 研究紀律層(M4)— 實驗記錄 + 生命週期 | `experiments.py`:`ExperimentStore`(SQLite `data/experiments.db`,WAL)記錄每次回測(git-hash/dirty、參數、資料窗、成本 bps、指標);`lifecycle.py`:`LifecycleRules`/`check_lifecycle()`(**M6.5 事前寫死的晉升/退場規則**:trailing 視窗 rolling Sharpe / 回撤 / 活動度,唯讀 `LifecycleReport`)。未來因子框架也放這 | config、utils、backtest.metrics(純函式) | `test_experiments/test_lifecycle` |
 | **quant/web/** | 唯讀結果儀表盤(FastAPI) | `app.py`:`create_app()`(App Factory);`routes.py`(7 端點:backtest/portfolio/sweep/walkforward/journal;薄包裝呼叫既有函式);`schemas.py`(pydantic 請求模型;backtest 含 slippage_bps);`static/index.html`(plotly.js CDN,無 Node 建置) | backtest、portfolio、execution、data | `test_web`(optional-dep skip) |
-| **quant/cli.py** | typer 進入點,串起所有層 | 20+ 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments`;`backtest` 含 `--slippage-bps/--calibrate/--log`)、交易(`paper/live/schedule/protect/account`)、營運(`journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
+| **quant/cli.py** | typer 進入點,串起所有層 | 24 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments/lifecycle`;`backtest` 含 `--spec/--slippage-bps/--calibrate/--report/--log`)、交易(`paper/live/schedule/protect/account`)、營運(`journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
 | **根目錄基建** | 打包 / 容器 / CI / 腳本 / 文件 | `pyproject.toml`(ruff line=120、mypy、pytest、extras `[timescale]`/`[web]`);`Dockerfile` + `docker-compose.yml`;`.github/workflows/ci.yml`(ruff+mypy+pytest);`scripts/`(`ci.ps1` 本機鏡像、`daily_live.ps1`);`docs/`(GUIDE/USAGE/DEPLOYMENT/SCHEDULING) | — | `scripts/ci.ps1` |
 
 ---
@@ -170,7 +170,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
    - 原始價 + 調整因子分離存放:才能真正重建 as-of 價格(動到 storage schema)。
    - ✅ **成本 / 滑價模型(M5.2/5.3,已完成)**:`backtest/costs.py` `CostModel`(fees+slippage);兩引擎 + sweep 支援 slippage;CLI `backtest --slippage-bps / --fees-bps / --calibrate`(`--calibrate` 讀 journal TCA 反推成本,打通 量測→校準→回測 閉環);web 儀表盤 backtest 分頁亦接上 slippage 旋鈕並顯示成本行。預設 slippage=0 保住 golden 回歸。
 2. **技術債清理**(見 §8,多為 P1/P2,價值高、風險低)。
-3. **Batch 3 — 研究深化**:✅ **實驗記錄系統(M4.5,已完成)**——`research/experiments.py` `ExperimentStore` 記錄每次回測(git-hash/參數/資料窗/成本/指標),CLI `quant experiments` 查詢,`backtest` 預設 `--log`(防過擬合的制度防線)。**待做**:回測報告+進階指標(M5.6/5.7)、策略生命週期(M6.5,晉升/退場)、參數外部化(M6.3)、研究知識庫(M4.6);因子庫/檢定與機會掃描器(卡存活者偏差)暫緩。
+3. **Batch 3 — 研究深化**:✅ 實驗記錄系統(M4.5)、✅ 進階指標+一鍵報告(M5.6/5.7)、✅ **參數外部化(M6.3)**——`strategies/spec.py` + `configs/strategies.json`(params/risk/lifecycle 全進版控,`quant backtest --spec NAME`)、✅ **策略生命週期(M6.5)**——`research/lifecycle.py` 事前寫死的晉升/退場規則,`quant lifecycle --all` 健康檢查(breach 時 exit 1,可排程當閘門)。**待做**:live/schedule 吃 `--spec`(參數外部化接到實盤路徑)、研究知識庫(M4.6);因子庫/檢定與機會掃描器(卡存活者偏差)暫緩。
 4. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。
 
 ---

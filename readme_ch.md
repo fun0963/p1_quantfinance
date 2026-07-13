@@ -16,8 +16,9 @@
 ```
 p1_quantfinance/
 ├── config/settings.py        # 全系統唯一設定來源(pydantic + .env)
-├── src/quant/                # 主程式(59 檔,約 5,600 行)
-│   ├── cli.py                # ⭐ 進入點:22 個 typer 指令
+├── configs/strategies.json   # ⭐ 具名策略規格:params/風控/生命週期規則(版控)
+├── src/quant/                # 主程式(約 6,400 行)
+│   ├── cli.py                # ⭐ 進入點:24 個 typer 指令
 │   ├── core/                 # 共通型別(Signal/Order)
 │   ├── utils/                # loguru 日誌
 │   ├── data/                 # 行情抓取、快取、品質、完整性
@@ -29,7 +30,7 @@ p1_quantfinance/
 │   ├── ops/                  # 營運:告警、對帳、OMS、TCA、健康、偏差
 │   ├── research/             # 研究紀律:實驗記錄系統
 │   └── web/                  # 唯讀網頁儀表盤(FastAPI)
-├── tests/                    # 28 個測試檔、201 個測試(鏡像 src/)
+├── tests/                    # 35 個測試檔、217 個測試(鏡像 src/)
 ├── scripts/                  # ci.ps1(本機 CI)、daily_live.ps1(排程包裝)
 ├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
 ├── portfolios/example.json   # 組合設定範例(設定是資料,不是程式)
@@ -49,13 +50,13 @@ p1_quantfinance/
 | `src/quant/data/feeds/` | 行情來源(可抽換):yfinance(研究預設)、Alpaca | `base.py`(`DataFeed` 介面)、`yfinance_feed.py`、`alpaca_feed.py`、`retry.py`(網路重試+退避) |
 | `src/quant/data/storage/` | 歷史資料儲存(可抽換):本機 Parquet(預設,原子寫入+備份)或 TimescaleDB | `base.py`(`BarStore` 介面)、`parquet_store.py`、`timescale_store.py`、`__init__.py`(`get_store()` 工廠) |
 | `src/quant/data/` | 載入與守門 | `loaders.py`(`load_bars` 快取優先下載;`fetch_bars` 各進入點共用)、`quality.py`(NaN/跳空/OHLC 檢查)、`integrity.py`(**偵測歷史被回溯改寫**,除權息陷阱) |
-| `src/quant/strategies/` | 策略=純訊號邏輯,引擎無關;加新策略只要一個類別+註冊一行 | `base.py`(`BaseStrategy` 介面)、`ma_cross.py`、`momentum.py`、`registry.py` |
+| `src/quant/strategies/` | 策略=純訊號邏輯,引擎無關;加新策略只要一個類別+註冊一行 | `base.py`(`BaseStrategy` 介面)、`ma_cross.py`、`momentum.py`、`registry.py`、`spec.py`(**讀 `configs/strategies.json` 的具名規格**) |
 | `src/quant/risk/` | 下單前的三道防線 | `base.py`(`RiskManager` 部位 sizing)、`gate.py`(`RiskGate`:部位/日虧上限、kill-switch;**降險賣單永遠放行**)、`bracket.py`(停損停利) |
 | `src/quant/backtest/` | 雙引擎回測與研究工具 | `base.py`(`BacktestEngine` 介面)、`vectorbt_engine.py`(向量化,快)、`backtrader_engine.py`(事件驅動,擬真)、`costs.py`(**成本/滑價模型,可用實盤 TCA 校準**)、`metrics.py`(Sharpe/Sortino/Calmar/月報酬…)、`optimize.py`(參數掃描)、`walkforward.py`(樣本外驗證)、`plots.py`、`report.py`(**一鍵 HTML tear sheet**) |
 | `src/quant/portfolio/` | 多策略資金配置、相關矩陣、分散化效益 | `portfolio.py`(`run_portfolio`,引擎可注入) |
 | `src/quant/execution/` | 下單與實盤生命週期 | `base.py`(`Broker` 介面)、`paper_broker.py`(離線模擬)、`alpaca_broker.py`(paper 端點+bracket/OCO)、`session.py`(紙上交易)、`live_runner.py`(單根 K 決策+新鮮度閘)、`scheduler.py`(APScheduler 排程)、`journal.py`(SQLite 交易紀錄:sessions/fills/orders/heartbeats) |
 | `src/quant/ops/` | 無人值守的營運後盾(全部 best-effort,絕不阻斷交易) | `notify.py`(Telegram/log 告警)、`reconcile.py`(帳 vs 紀錄對帳)、`oms.py`(訂單狀態機+稽核)、`tca.py`(滑價分析)、`health.py`(heartbeat 監控)、`drift.py`(回測 vs 實盤偏差)、`report.py`(每日報告) |
-| `src/quant/research/` | 研究紀律層 | `experiments.py`(**實驗記錄系統**:每次回測自動存 git-hash/參數/資料窗/成本/指標到 `data/experiments.db`,防過擬合) |
+| `src/quant/research/` | 研究紀律層 | `experiments.py`(**實驗記錄系統**:每次回測自動存 git-hash/參數/資料窗/成本/指標到 `data/experiments.db`,防過擬合)、`lifecycle.py`(**事前寫死的晉升/退場規則**:trailing 視窗 Sharpe/回撤/活動度檢查) |
 | `src/quant/web/` | 唯讀儀表盤,不放下單按鈕 | `app.py`(app 工廠)、`routes.py`(7 個 JSON 端點)、`schemas.py`(請求驗證)、`static/index.html`(單檔前端,plotly) |
 | `tests/` | 測試鏡像 src/:單元+整合+golden 回歸(固定種子鎖數字)+雙引擎一致性;實盤路徑全部可離線測 | `test_regression.py`(改壞指標會被抓)、`test_scheduler.py`(離線實盤演練)等 28 檔 |
 
@@ -113,7 +114,7 @@ quant info                              # 確認設定與已註冊策略
 
 > 沒啟用 venv 時的等效寫法:`& .\.venv\Scripts\python.exe -m quant.cli <指令>`
 
-### 1. 指令總表(22 個)
+### 1. 指令總表(24 個)
 
 **研究:**
 
@@ -122,11 +123,12 @@ quant info                              # 確認設定與已註冊策略
 | `quant info` | 列出設定與已註冊策略 |
 | `quant download SYMBOL` | 下載並快取歷史資料 |
 | `quant check SYMBOL` | 資料品質檢查(NaN / 跳空 / OHLC / 未還原分割) |
-| `quant backtest SYMBOL` | 雙引擎回測比較;`--slippage-bps` 滑價、`--calibrate` 用實盤 TCA 校準成本、`--report` 出 tear sheet、預設自動記錄實驗(`--no-log` 關) |
+| `quant backtest [SYMBOL]` | 雙引擎回測比較;`--spec NAME` 從規格檔帶入全部參數、`--slippage-bps` 滑價、`--calibrate` 用實盤 TCA 校準成本、`--report` 出 tear sheet、預設自動記錄實驗(`--no-log` 關) |
 | `quant sweep SYMBOL` | 向量化參數掃描 + 排名 + 熱力圖 |
 | `quant walkforward SYMBOL` | 樣本外滾動驗證(`--engine backtrader` 可換引擎) |
 | `quant portfolio` | 多策略資金配置 + 分散化分析 |
 | `quant experiments` | **查詢實驗記錄**(`--strategy/--symbol` 過濾、`--id N` 看單筆) |
+| `quant lifecycle NAME\|--all` | **策略健康檢查**:用規格檔裡事前寫死的規則(rolling Sharpe / 回撤 / 活動度)評估 trailing 視窗,breach 時 exit 1(可排程當閘門) |
 
 **交易:**
 
@@ -164,7 +166,9 @@ quant sweep SPY --strategy momentum                  # 參數掃描 → 排名 +
 quant walkforward SPY --strategy momentum            # 樣本外驗證(別跳過!)
 quant backtest SPY --strategy momentum --params "lookback=100" `
     --slippage-bps 5 --report                        # 含滑價的雙引擎回測 + tear sheet
+quant backtest --spec spy_momentum                   # 或:全部參數來自版控的規格檔
 quant experiments                                    # 回顧所有跑過的實驗
+quant lifecycle --all                                # 用事前寫死的規則檢查策略健康度
 ```
 > 經驗法則:**WF efficiency** 接近 1 = 穩健;遠小於 1 = 過擬合。
 > 回測請**加上滑價**(`--slippage-bps`)或用 `--calibrate` 直接套實盤實測成本,別看零摩擦的數字。
@@ -251,7 +255,8 @@ powershell -ExecutionPolicy Bypass -File scripts\ci.ps1   # ruff + mypy + pytest
 |------|------|------|
 | **存活者偏差** | **刻意圈定不做**(2026-07 決策):目前聚焦單標的/ETF 技術面擇時,此範圍幾乎無此偏差。⚠️ 觸發條件:未來要做「跨標的選股/掃描」時,必須先換 survivorship-free 資料源(Norgate/Sharadar)+ 建 as-of 宇宙,否則那類回測不可信 | 範圍決策 |
 | **原始價+調整因子分離存放** | yfinance 只能當原型;要真正重建 as-of 價格需換正式資料源(動到 storage schema) | Batch 2 剩餘 |
-| **策略生命週期** | 事前寫死晉升/退場條件(rolling Sharpe、MDD 熔斷)、參數外部化 YAML | 研究線下一步 |
+| **spec 接進實盤路徑** | `configs/strategies.json` 已供 `backtest --spec` 與 `lifecycle` 使用;`live`/`schedule` 尚未吃 `--spec`(目前仍走 CLI 參數) | 研究線下一步 |
+| **研究知識庫(M4.6)** | 每個試過的想法一頁 Markdown(假設/做法/結果/失敗原因) | 研究線下一步 |
 | **IBKR 券商** | 用 `ib_async` 寫 `IBKRBroker` 接在 `Broker` 介面後面;IBKR 需本機跑 TWS/Gateway,比 Alpaca 重 | 未來 |
 | **盤中 / 即時行情** | websocket 串流 + 成交通知;目前以**日線**為主 | 選配 |
 | **更多策略 / 因子檢定** | 內建 `ma_cross`、`momentum`;因子庫與 IC/RankIC 檢定尚未動工 | 持續擴充 |
