@@ -22,9 +22,11 @@ from quant.utils import get_logger
 log = get_logger(__name__)
 
 
-def _build_feed(data: pd.DataFrame, signals: pd.DataFrame):
+def _build_feed(data: pd.DataFrame, signals: pd.DataFrame, timeframe: str = "1d"):
     """Merge OHLCV + boolean signals into a Backtrader PandasData with extra lines."""
     import backtrader as bt
+
+    from quant.data.timeframes import get_timeframe
 
     merged = data.copy()
     merged["entries"] = signals["entries"].astype(int)
@@ -47,6 +49,11 @@ def _build_feed(data: pd.DataFrame, signals: pd.DataFrame):
     # Backtrader wants a tz-naive index.
     if merged.index.tz is not None:
         merged.index = merged.index.tz_localize(None)
+    tf = get_timeframe(timeframe)
+    if tf.intraday:
+        # Label bars as minutes so bt's datetime handling doesn't assume days.
+        return _SignalData(dataname=merged, timeframe=bt.TimeFrame.Minutes,
+                           compression=max(1, tf.bar_seconds // 60))
     return _SignalData(dataname=merged)
 
 
@@ -105,7 +112,7 @@ class BacktraderEngine(BacktestEngine):
         trades_log: list[dict] = []
         cerebro = bt.Cerebro()
         cerebro.addstrategy(_make_strategy_cls(self.target_pct, equity_log, trades_log))
-        cerebro.adddata(_build_feed(data, signals))
+        cerebro.adddata(_build_feed(data, signals, timeframe))
         cerebro.broker.setcash(self.cash)
         # Slippage is folded into commission (both are per-side fractions of
         # notional). Backtrader's set_slippage_perc is unreliable under

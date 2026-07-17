@@ -9,8 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# Trading periods per year, keyed by canonical timeframe (for annualization).
-_PERIODS_PER_YEAR = {"1d": 252, "1h": 252 * 6.5, "1wk": 52, "1mo": 12}
+from quant.data.timeframes import get_timeframe
 
 
 def compute_metrics(
@@ -27,7 +26,9 @@ def compute_metrics(
     if len(eq) < 2:
         return {"error": "equity curve too short"}
 
-    ppy = _PERIODS_PER_YEAR.get(timeframe, 252)
+    # Registry lookup, loud on unknown - the old private table silently fell
+    # back to 252, which annualized 1min Sharpe as if bars were days.
+    ppy = get_timeframe(timeframe).periods_per_year
     rets = eq.pct_change(fill_method=None).dropna()
 
     total_return = eq.iloc[-1] / eq.iloc[0] - 1.0

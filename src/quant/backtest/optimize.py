@@ -69,6 +69,8 @@ def sweep(
     log.info(f"sweeping {len(combos)} {strategy_cls.name} combos in one vectorbt pass "
              f"({len(data)} bars)")
 
+    from quant.data.timeframes import get_timeframe
+
     pf = vbt.Portfolio.from_signals(
         close=data["close"],          # 1D close broadcasts across all columns
         entries=entries_df,
@@ -76,7 +78,7 @@ def sweep(
         init_cash=cash,
         fees=fees,
         slippage=slippage,
-        freq="1D",
+        freq=get_timeframe(timeframe).vbt_freq,
     )
 
     # compute_metrics per column → identical metric definitions to `quant backtest`.

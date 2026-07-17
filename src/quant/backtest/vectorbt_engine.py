@@ -27,6 +27,8 @@ class VectorBTEngine(BacktestEngine):
         signals = strategy.generate_signals(data)
         log.info(f"Running {strategy} on vectorbt ({len(data)} bars)")
 
+        from quant.data.timeframes import get_timeframe
+
         pf = vbt.Portfolio.from_signals(
             close=data["close"],
             entries=signals["entries"],
@@ -34,7 +36,7 @@ class VectorBTEngine(BacktestEngine):
             init_cash=self.cash,
             fees=self.fees,
             slippage=self.slippage,
-            freq="1D",
+            freq=get_timeframe(timeframe).vbt_freq,
         )
         stats = pf.stats()
         equity = pf.value()

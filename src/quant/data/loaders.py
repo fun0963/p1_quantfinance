@@ -116,10 +116,11 @@ def fetch_bars(
     use_cache: bool = True,
 ) -> pd.DataFrame:
     """`load_bars` with the entrypoint-friendly signature: ISO date string and the
-    default research feed (yfinance). CLI / web / portfolio all funnel through
-    here instead of each re-implementing the date parsing + feed construction."""
-    from quant.data.feeds.yfinance_feed import YFinanceFeed
+    timeframe's default feed (yfinance for daily+, Alpaca for intraday). CLI /
+    web / portfolio all funnel through here instead of each re-implementing the
+    date parsing + feed construction."""
+    from quant.data.feeds import get_feed
 
     start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
-    return load_bars(symbol, YFinanceFeed(), start=start_dt, timeframe=timeframe,
+    return load_bars(symbol, get_feed(timeframe), start=start_dt, timeframe=timeframe,
                      use_cache=use_cache)
