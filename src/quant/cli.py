@@ -321,14 +321,22 @@ def download(
     symbol: str,
     start: str = typer.Option("2020-01-01", help="YYYY-MM-DD"),
     timeframe: str = typer.Option("1d"),
-    source: str = typer.Option("yfinance", help="yfinance | alpaca"),
+    source: str = typer.Option("", help="force a feed (yfinance | alpaca); "
+                                        "default: the timeframe's registry default"),
 ) -> None:
     """Download historical bars into the local parquet store."""
-    from quant.data.feeds.alpaca_feed import AlpacaFeed
-    from quant.data.feeds.yfinance_feed import YFinanceFeed
+    from quant.data.feeds import DataFeed, get_feed
     from quant.data.storage import get_store
 
-    feed = AlpacaFeed() if source == "alpaca" else YFinanceFeed()
+    feed: DataFeed
+    if source == "alpaca":
+        from quant.data.feeds.alpaca_feed import AlpacaFeed
+        feed = AlpacaFeed()
+    elif source == "yfinance":
+        from quant.data.feeds.yfinance_feed import YFinanceFeed
+        feed = YFinanceFeed()
+    else:
+        feed = get_feed(timeframe)   # registry default (alpaca for 1min, yfinance daily+)
     start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
     df = feed.get_history(symbol, start=start_dt, timeframe=timeframe)
     handle = get_store().save(symbol, timeframe, df)  # parquet or timescale per config

@@ -140,7 +140,7 @@ quant info                              # 確認設定與已註冊策略
 | `quant account` | 檢查 Alpaca paper 連線(唯讀) |
 | `quant live [SYMBOL]` | 評估最新 K 並對齊部位(預設 dry-run,`--execute` 才送單);`--spec NAME` 從規格檔帶入策略+風控 |
 | `quant protect SYMBOL` | 幫既有部位掛 OCO 停損停利(預設 dry-run) |
-| `quant schedule [SYMBOL]` | 排程每個交易日自動跑 live;`--spec` 可重複,**一個程序排多個策略** |
+| `quant schedule [SYMBOL]` | 排程自動跑 live;`--spec` 可重複(一程序多策略);預設每日 `--at 16:10`,**盤中模式 `--every 5min`**(只在開市時段觸發,分鐘級策略用) |
 
 **營運 / 監控:**
 

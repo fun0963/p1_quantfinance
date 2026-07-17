@@ -14,6 +14,21 @@
       "min_trades": 1
     }
   },
+  "qqq_scalp_1min": {
+    "symbol": "QQQ",
+    "strategy": "ma_cross",
+    "params": {"fast": 5, "slow": 20},
+    "timeframe": "1min",
+    "start": "2026-06-01",
+    "risk": {"max_position_notional": 3000},
+    "lifecycle": {
+      "state": "testing",
+      "eval_bars": 1950,
+      "min_rolling_sharpe": -100.0,
+      "max_drawdown_pct": -95.0,
+      "min_trades": 10
+    }
+  },
   "qqq_ma_cross": {
     "symbol": "QQQ",
     "strategy": "ma_cross",
