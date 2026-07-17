@@ -185,8 +185,8 @@ def test_schedule_multiple_specs_one_process(monkeypatch):
     import quant.execution.scheduler as sched
     captured = {}
 
-    def fake_run_schedule(cfgs, *, at, days, tz, dry_run, run_now):
-        captured.update(cfgs=cfgs, dry_run=dry_run)
+    def fake_run_schedule(cfgs, *, at, days, tz, every=None, dry_run, run_now):
+        captured.update(cfgs=cfgs, dry_run=dry_run, every=every)
 
     monkeypatch.setattr(sched, "run_schedule", fake_run_schedule)
     r = runner.invoke(cli.app, ["schedule", "--spec", "spy_momentum",
@@ -194,7 +194,14 @@ def test_schedule_multiple_specs_one_process(monkeypatch):
     assert r.exit_code == 0, r.output
     assert [c.symbol for c in captured["cfgs"]] == ["SPY", "QQQ"]
     assert captured["dry_run"] is True                      # dry-run default preserved
+    assert captured["every"] is None                        # daily cron mode by default
     assert "momentum on SPY" in r.output and "ma_cross on QQQ" in r.output
+
+    r2 = runner.invoke(cli.app, ["schedule", "--spec", "spy_momentum",
+                                 "--broker", "paper", "--every", "5min"])
+    assert r2.exit_code == 0, r2.output
+    assert captured["every"] == "5min"                      # intraday interval mode
+    assert "every 5min (market hours only)" in r2.output
 
 
 def test_schedule_execute_banner_is_cp950_safe(monkeypatch):
@@ -203,7 +210,7 @@ def test_schedule_execute_banner_is_cp950_safe(monkeypatch):
     (the dry-run branch was pure ASCII, so it never tripped offline)."""
     import quant.execution.scheduler as sched
     monkeypatch.setattr(sched, "run_schedule",
-                        lambda cfgs, *, at, days, tz, dry_run, run_now: None)
+                        lambda cfgs, *, at, days, tz, every=None, dry_run, run_now: None)
     r = runner.invoke(cli.app, ["schedule", "--spec", "spy_momentum",
                                 "--broker", "paper", "--execute"])
     assert r.exit_code == 0, r.output

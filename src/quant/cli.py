@@ -216,8 +216,10 @@ def schedule(
     max_daily_loss: float = typer.Option(0, help="daily-loss breaker (0=off); blocks NEW risk, not exits"),
     stop_loss: float = typer.Option(0, help="bracket stop %% (needs --take-profit)"),
     take_profit: float = typer.Option(0, help="bracket take %% (needs --stop-loss)"),
-    at: str = typer.Option("16:10", help="HH:MM to run each day"),
+    at: str = typer.Option("16:10", help="HH:MM to run each day (daily mode)"),
     days: str = typer.Option("mon-fri", help="cron day_of_week (e.g. mon-fri)"),
+    every: str = typer.Option("", help="intraday mode: run every N ('5min', '15min', '1h') "
+                                       "while the market is OPEN, instead of daily at --at"),
     tz: str = typer.Option("America/New_York", help="timezone for the schedule"),
     run_now: bool = typer.Option(False, "--run-now", help="also run once immediately on start"),
     execute: bool = typer.Option(False, "--execute", help="ACTUALLY submit (default: dry-run)"),
@@ -243,13 +245,15 @@ def schedule(
                            take_profit=take_profit)]
     label = "EXECUTE" if execute else "DRY-RUN"
     jobs = ", ".join(f"{c.strategy} on {c.symbol}" for c in cfgs)
-    typer.echo(f"[SCHEDULE {label}] {jobs} (broker={broker}) at {at} {days} {tz}")
+    cadence = f"every {every} (market hours only)" if every else f"at {at} {days}"
+    typer.echo(f"[SCHEDULE {label}] {jobs} (broker={broker}) {cadence} {tz}")
     if execute:
         # ASCII only: this line crashes cp950 consoles if it carries U+26A0 etc.
         typer.echo("  WARNING: live order routing is ON. Ctrl+C to stop.")
     else:
         typer.echo("  dry-run: decisions are computed & journaled, no orders. Ctrl+C to stop.")
-    run_schedule(cfgs, at=at, days=days, tz=tz, dry_run=not execute, run_now=run_now)
+    run_schedule(cfgs, at=at, days=days, tz=tz, every=every or None,
+                 dry_run=not execute, run_now=run_now)
 
 
 @app.command()

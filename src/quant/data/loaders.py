@@ -34,6 +34,17 @@ def _cache_fresh(last_bar: date, now: date, max_staleness_days: int) -> bool:
     return (now - last_bar).days <= max_staleness_days
 
 
+def _cache_fresh_bars(last_bar_ts, timeframe: str, max_staleness_bars: int) -> bool:
+    """Bar-unit freshness for intraday: newest cached bar must be within N bar
+    lengths of now (timestamp math, not calendar dates)."""
+    from quant.data.timeframes import get_timeframe
+
+    ts = pd.Timestamp(last_bar_ts)
+    ts = ts.tz_localize(UTC) if ts.tz is None else ts.tz_convert(UTC)
+    age_seconds = (pd.Timestamp.now(tz=UTC) - ts).total_seconds()
+    return age_seconds <= max_staleness_bars * get_timeframe(timeframe).bar_seconds
+
+
 def load_bars(
     symbol: str,
     feed: DataFeed,
@@ -41,12 +52,15 @@ def load_bars(
     timeframe: str = "1d",
     use_cache: bool = True,
     max_staleness_days: int | None = None,
+    max_staleness_bars: int | None = None,
 ) -> pd.DataFrame:
     """Return OHLCV bars from `start` onward, served from cache when it covers the range.
 
     `max_staleness_days`: if set, a cache whose newest bar is older than this many
     days is re-downloaded rather than served — the live path passes a small value so
     it never decides on a stale cache. Leave None for research (cache is fine).
+    `max_staleness_bars`: same idea in BAR units for intraday timeframes (a "1 day"
+    tolerance is meaningless when a bar lasts a minute); wins when both are set.
     """
     store = get_store()
     start = start or datetime(2020, 1, 1, tzinfo=UTC)
@@ -58,9 +72,12 @@ def load_bars(
             prior = cached
             # Compare on calendar date to sidestep tz-aware/naive index mismatches.
             covers = _cache_covers(cached.index[0].date(), start.date())
-            fresh = (max_staleness_days is None or
-                     _cache_fresh(cached.index[-1].date(), datetime.now(UTC).date(),
-                                  max_staleness_days))
+            if max_staleness_bars is not None:
+                fresh = _cache_fresh_bars(cached.index[-1], timeframe, max_staleness_bars)
+            else:
+                fresh = (max_staleness_days is None or
+                         _cache_fresh(cached.index[-1].date(), datetime.now(UTC).date(),
+                                      max_staleness_days))
             if covers and fresh:
                 log.debug(f"cache hit {symbol} {timeframe} (first bar {cached.index[0].date()}, "
                           f"requested {start.date()})")

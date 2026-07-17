@@ -116,6 +116,7 @@ def run_live_step(
     bracket_cfg: BracketConfig | None = None,
     now: datetime | None = None,
     max_bar_age_days: int | None = None,
+    max_bar_age_seconds: float | None = None,
 ) -> LiveDecision:
     """Evaluate the latest bar and act once. Broker positions are the truth.
 
@@ -149,14 +150,24 @@ def run_live_step(
     dec = LiveDecision(ts=ts, symbol=symbol, action="hold" if pos > 0 else "flat",
                        price=price, dry_run=dry_run, position_before=pos)
 
-    # Freshness gate: never act on a stale bar. If the latest bar is older than
-    # max_bar_age_days (accounting for weekends/holidays), refuse — this is the
-    # safety net against a cached run deciding on week-old data.
-    if max_bar_age_days is not None:
+    # Freshness gate: never act on a stale bar — the safety net against a cached
+    # run deciding on old data. Seconds-based check (intraday) wins over the
+    # day-based one; a "days" tolerance is meaningless when a bar lasts a minute.
+    if max_bar_age_seconds is not None:
+        ts_utc = pd.Timestamp(ts)
+        ts_utc = ts_utc.tz_localize(UTC) if ts_utc.tz is None else ts_utc.tz_convert(UTC)
+        age_s = (pd.Timestamp(now or datetime.now(UTC)) - ts_utc).total_seconds()
+        if age_s > max_bar_age_seconds:
+            dec.reason = (f"stale data: latest bar {ts} is {age_s:.0f}s old "
+                          f"(> {max_bar_age_seconds:.0f}s) - not acting")
+            dec.blocked = dec.reason
+            log.warning(f"[live] {symbol} BLOCKED: {dec.reason}")
+            return dec
+    elif max_bar_age_days is not None:
         age = ((now or datetime.now(UTC)).date() - ts.date()).days
         if age > max_bar_age_days:
             dec.reason = (f"stale data: latest bar {ts.date()} is {age}d old "
-                          f"(> {max_bar_age_days}d) — not acting")
+                          f"(> {max_bar_age_days}d) - not acting")
             dec.blocked = dec.reason
             log.warning(f"[live] {symbol} BLOCKED: {dec.reason}")
             return dec
