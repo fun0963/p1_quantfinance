@@ -171,8 +171,13 @@ run_schedule(APScheduler) → 每次觸發 _job：
    - ✅ **成本 / 滑價模型(M5.2/5.3,已完成)**:`backtest/costs.py` `CostModel`(fees+slippage);兩引擎 + sweep 支援 slippage;CLI `backtest --slippage-bps / --fees-bps / --calibrate`(`--calibrate` 讀 journal TCA 反推成本,打通 量測→校準→回測 閉環);web 儀表盤 backtest 分頁亦接上 slippage 旋鈕並顯示成本行。預設 slippage=0 保住 golden 回歸。
 2. **技術債清理**(見 §8,多為 P1/P2,價值高、風險低)。
 3. **Batch 3 — 研究深化**:✅ 實驗記錄系統(M4.5)、✅ 進階指標+一鍵報告(M5.6/5.7)、✅ **參數外部化(M6.3)**——`strategies/spec.py` + `configs/strategies.json`(params/risk/lifecycle 全進版控,`quant backtest --spec NAME`)、✅ **策略生命週期(M6.5)**——`research/lifecycle.py` 事前寫死的晉升/退場規則,`quant lifecycle --all` 健康檢查(breach 時 exit 1,可排程當閘門)。✅ **spec 接進實盤路徑**——`live --spec` / `schedule --spec`(可重複,一程序多策略),策略身分+風控來自版控規格檔,`execute` 硬性 CLI-only。✅ **研究知識庫(M4.6)**——`research/notes.py` + `research_notes/`,`quant note new/list`,已有兩篇種子筆記(momentum vs ma_cross OOS、零摩擦回測高估)。**Batch 3 研究紀律骨架至此完整**(實驗記錄→成本校準→生命週期→spec 營運→知識庫)。之後:因子庫/檢定與機會掃描器(卡存活者偏差)暫緩。
-4. **Batch 4 — 分鐘級/盤中(已完成核心)**:timeframe 註冊表(4-1)、bar 級新鮮度閘(4-2)、盤中 interval 排程 + 開市閘(4-3)、Alpaca 1min 端到端實測(4-4:下載/雙引擎回測/lifecycle/`qqq_scalp_1min` TCA 探針 spec)。動機:日線動量年僅 2-3 次轉換,TCA 累積過慢;且收盤後下單量到的是隔夜跳空非真滑價 → 盤中決策+成交秒級間隔才有可校準的滑價。
-5. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。
+4. ✅ **Batch 4 — 分鐘級/盤中(完成,含首批實測)**:timeframe 註冊表(4-1)、bar 級新鮮度閘(4-2)、盤中 interval 排程 + 開市閘(4-3)、Alpaca 1min 端到端(4-4)。**2026-07-17 盤中實戰**:`qqq_scalp_1min` 探針每 5 分鐘決策、19/19 成交,`quant tca` 量得 **avg slippage -1.0 bps**(遠低於假設的 5 bps;樣本僅一日一檔,校準先保守)。途中逮到並修掉 3 個只有真實營運才現形的 bug(enum side 正規化、cp950 banner、SIP 15 分鐘延遲→改 IEX)。
+5. **接下來(依優先序)**:
+   - ⬜ **Windows 工作排程器持久化**:把日線 spy_momentum(16:10 ET)與 TCA 探針(開盤日 `--every 5min`)搬進 Task Scheduler,重開機自動恢復(現在是 session 背景程序,重開機即失);見 docs/SCHEDULING.md。
+   - ⬜ **累積 TCA 樣本**:探針多跑幾個交易日、換 SPY 也量,樣本夠了再回頭定案 `--calibrate` 的使用準則。
+   - ⬜ **走查驗收**:照 [walkthrough_ch.md](walkthrough_ch.md) 從發想到檢討完整走一輪(使用者主導)。
+   - ⬜ 第二支正式策略(用走查流程孵化);(遠期)存活者偏差解鎖後才做掃描器。
+6. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。
 
 ---
 

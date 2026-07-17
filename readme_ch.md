@@ -5,7 +5,7 @@
 
 > ⚠️ **安全聲明**:本系統為研究 / 教育用途,非投資建議。下單為 **paper-only**(`ALPACA_PAPER=true` 才能跑)、且**預設 dry-run**(每個會送單的指令都要再加 `--execute` 才會真的下單)。
 
-> 📁 相關文件:[README.md](README.md)(英文總覽)、[architecture_map_ch.md](architecture_map_ch.md)(**架構地圖,接手必讀**)、[audit_and_roadmap_ch.md](audit_and_roadmap_ch.md)(進度與路線圖)、[docs/GUIDE.md](docs/GUIDE.md)(端到端指南)、[docs/USAGE.md](docs/USAGE.md)(換標的/策略)、[docs/SCHEDULING.md](docs/SCHEDULING.md)(自動排程)、[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)(TimescaleDB/組合/Docker)。
+> 📁 相關文件:[walkthrough_ch.md](walkthrough_ch.md)(**走查規劃表:從發想到檢討一步一步**)、[README.md](README.md)(英文總覽)、[architecture_map_ch.md](architecture_map_ch.md)(**架構地圖,接手必讀**)、[audit_and_roadmap_ch.md](audit_and_roadmap_ch.md)(進度與路線圖)、[docs/GUIDE.md](docs/GUIDE.md)(端到端指南)、[docs/USAGE.md](docs/USAGE.md)(換標的/策略)、[docs/SCHEDULING.md](docs/SCHEDULING.md)(自動排程)、[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)(TimescaleDB/組合/Docker)。
 
 ---
 
