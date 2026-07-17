@@ -1,10 +1,10 @@
 """Command-line entrypoint (typer).
 
-    quant info                    — resolved settings + registered strategies
-    quant download SYMBOL         — fetch history into the parquet store
-    quant backtest SYMBOL         — run a strategy on both engines, compare
-    quant sweep SYMBOL            — vectorized parameter sweep (ranked + CSV/heatmap)
-    quant walkforward SYMBOL      — out-of-sample walk-forward validation
+    quant info                    - resolved settings + registered strategies
+    quant download SYMBOL         - fetch history into the parquet store
+    quant backtest SYMBOL         - run a strategy on both engines, compare
+    quant sweep SYMBOL            - vectorized parameter sweep (ranked + CSV/heatmap)
+    quant walkforward SYMBOL      - out-of-sample walk-forward validation
 
 All strategy-driven commands take `--strategy NAME` (see `quant info`) plus
 optional `--params k=v,...` / `--grid k=v1,v2;...` overrides.
@@ -225,7 +225,7 @@ def schedule(
     """Run `live` automatically on a cron schedule (blocking process). Dry-run by default.
 
     For reboot-survival, prefer Windows Task Scheduler calling `quant live --execute`
-    — see docs/SCHEDULING.md. Ctrl+C to stop this loop.
+    - see docs/SCHEDULING.md. Ctrl+C to stop this loop.
     """
     from quant.execution.scheduler import LiveConfig, run_schedule
 
@@ -245,7 +245,8 @@ def schedule(
     jobs = ", ".join(f"{c.strategy} on {c.symbol}" for c in cfgs)
     typer.echo(f"[SCHEDULE {label}] {jobs} (broker={broker}) at {at} {days} {tz}")
     if execute:
-        typer.echo("  ⚠ live order routing is ON. Ctrl+C to stop.")
+        # ASCII only: this line crashes cp950 consoles if it carries U+26A0 etc.
+        typer.echo("  WARNING: live order routing is ON. Ctrl+C to stop.")
     else:
         typer.echo("  dry-run: decisions are computed & journaled, no orders. Ctrl+C to stop.")
     run_schedule(cfgs, at=at, days=days, tz=tz, dry_run=not execute, run_now=run_now)
@@ -265,7 +266,7 @@ def protect(
     brk = AlpacaBroker()
     pos = next((p for p in brk.get_positions() if p.symbol == symbol), None)
     if pos is None:
-        typer.echo(f"No open position in {symbol} — nothing to protect.")
+        typer.echo(f"No open position in {symbol} - nothing to protect.")
         raise typer.Exit(code=1)
 
     stop, take = bracket_prices(pos.avg_price, stop_loss, take_profit)
@@ -278,7 +279,7 @@ def protect(
     if whole < pos.qty:
         typer.echo(f"  note: {pos.qty - whole:.4f} fractional share left unprotected (OCO needs whole shares)")
     if whole < 1:
-        typer.echo("  position < 1 whole share — cannot place an OCO.")
+        typer.echo("  position < 1 whole share - cannot place an OCO.")
         raise typer.Exit(code=1)
 
     if not execute:
@@ -304,7 +305,7 @@ def account() -> None:
         typer.echo("  - check ALPACA_PAPER=true")
         raise typer.Exit(code=1)
 
-    typer.echo("\nAlpaca paper account — connected OK")
+    typer.echo("\nAlpaca paper account - connected OK")
     for k, v in summary.items():
         typer.echo(f"  {k:<16}: {v}")
     typer.echo("  open positions  : "
@@ -344,18 +345,18 @@ def journal(
             rows = tj.live_log(limit=limit)
             typer.echo(f"\nRecent live decisions (newest first), db: {tj.path}\n")
             typer.echo(rows.to_string(index=False) if not rows.empty
-                       else "no live decisions yet — run `quant live ...`")
+                       else "no live decisions yet - run `quant live ...`")
         elif session > 0:
             fills = tj.fills(session)
             blocks = tj.blocked(session)
-            typer.echo(f"\n=== session #{session} — {len(fills)} fills ===")
+            typer.echo(f"\n=== session #{session} - {len(fills)} fills ===")
             typer.echo(fills.to_string(index=False) if not fills.empty else "(no fills)")
             typer.echo(f"\n=== {len(blocks)} blocked orders ===")
             typer.echo(blocks.to_string(index=False) if not blocks.empty else "(none)")
         else:
             sessions = tj.sessions(limit=limit)
             if sessions.empty:
-                typer.echo("journal is empty — run `quant paper ...` first")
+                typer.echo("journal is empty - run `quant paper ...` first")
             else:
                 typer.echo(f"\nRecent sessions (newest first), db: {tj.path}\n")
                 typer.echo(sessions.to_string(index=False))
@@ -837,12 +838,12 @@ def web(
     try:
         import uvicorn
     except ModuleNotFoundError:
-        typer.echo('web deps not installed — run:  pip install -e ".[web]"')
+        typer.echo('web deps not installed - run:  pip install -e ".[web]"')
         raise typer.Exit(code=1) from None
 
     typer.echo(f"dashboard : http://{host}:{port}")
     typer.echo(f"API docs  : http://{host}:{port}/docs")
-    typer.echo("read-only — no order routing here (live trading stays in the CLI). Ctrl+C to stop.")
+    typer.echo("read-only - no order routing here (live trading stays in the CLI). Ctrl+C to stop.")
     uvicorn.run("quant.web.app:app", host=host, port=port, reload=reload)
 
 
@@ -912,7 +913,7 @@ def oms(
             typer.echo(f"synced: {n} order(s) advanced\n")
         rows = tj.orders(limit=limit)
         if rows.empty:
-            typer.echo("no orders tracked yet — place one via `quant live --execute`")
+            typer.echo("no orders tracked yet - place one via `quant live --execute`")
             return
         cols = ["id", "symbol", "side", "qty", "status", "intended_price",
                 "avg_fill_price", "filled_qty", "broker_order_id"]
@@ -1022,7 +1023,7 @@ def integrity(
         store = get_store()
         old = store.load(symbol, timeframe) if store.exists(symbol, timeframe) else None
         if old is None or old.empty:
-            typer.echo(f"no cache for {symbol} {timeframe} — download it first (quant download)")
+            typer.echo(f"no cache for {symbol} {timeframe} - download it first (quant download)")
             raise typer.Exit(code=1)
         start_dt = datetime.fromisoformat(start).replace(tzinfo=UTC)
         fresh = YFinanceFeed().get_history(symbol, start=start_dt, timeframe=timeframe)

@@ -197,6 +197,20 @@ def test_schedule_multiple_specs_one_process(monkeypatch):
     assert "momentum on SPY" in r.output and "ma_cross on QQQ" in r.output
 
 
+def test_schedule_execute_banner_is_cp950_safe(monkeypatch):
+    """Regression: the --execute branch's banner carried U+26A0 and crashed the
+    Windows cp950 console the FIRST time anyone ran a real scheduled execute
+    (the dry-run branch was pure ASCII, so it never tripped offline)."""
+    import quant.execution.scheduler as sched
+    monkeypatch.setattr(sched, "run_schedule",
+                        lambda cfgs, *, at, days, tz, dry_run, run_now: None)
+    r = runner.invoke(cli.app, ["schedule", "--spec", "spy_momentum",
+                                "--broker", "paper", "--execute"])
+    assert r.exit_code == 0, r.output
+    r.output.encode("cp950")                                # must not raise
+    assert "live order routing is ON" in r.output
+
+
 def test_schedule_rejects_symbol_and_spec_together(monkeypatch):
     r = runner.invoke(cli.app, ["schedule", "SPY", "--spec", "spy_momentum"])
     assert r.exit_code != 0
