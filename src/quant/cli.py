@@ -101,6 +101,28 @@ def _engine_cls(name: str):
     return engines[name]
 
 
+def _cfg_from_spec(spec_name: str, *, symbol: str = "", broker: str, mode: str,
+                   fraction: float):
+    """LiveConfig from a named spec: strategy identity (symbol/strategy/params/
+    start/timeframe) and the risk block come from the reviewed spec file;
+    operational knobs (broker/mode/fraction) stay CLI-side. `execute` can NEVER
+    come from a spec - going live is always an explicit human flag."""
+    from quant.execution.scheduler import LiveConfig
+    from quant.strategies.spec import get_spec
+
+    sp = get_spec(spec_name)
+    r = sp.risk
+    return LiveConfig(
+        symbol=symbol or sp.symbol, strategy=sp.strategy, params=sp.params,
+        start=sp.start, timeframe=sp.timeframe, broker=broker, mode=mode,
+        fraction=fraction,
+        max_position_notional=float(r.get("max_position_notional", 0.0)),
+        max_daily_loss=float(r.get("max_daily_loss", 0.0)),
+        stop_loss=float(r.get("stop_loss", 0.0)),
+        take_profit=float(r.get("take_profit", 0.0)),
+    )
+
+
 # --- commands ---------------------------------------------------------------
 @app.callback()
 def _init() -> None:
@@ -126,7 +148,9 @@ def info() -> None:
 
 @app.command()
 def live(
-    symbol: str,
+    symbol: str = typer.Argument("", help="ticker (optional when --spec provides one)"),
+    spec: str = typer.Option("", help="named spec from configs/strategies.json - fills "
+                                      "symbol/strategy/params/start/timeframe AND risk settings"),
     strategy: str = typer.Option("ma_cross", help="strategy name"),
     params: str = typer.Option("", help="e.g. 'lookback=100'"),
     start: str = typer.Option("2023-01-01", help="history start for signals (YYYY-MM-DD)"),
@@ -145,14 +169,20 @@ def live(
     """Evaluate the LATEST bar and reconcile the position (signal->risk gate->broker). Dry-run by default."""
     from quant.execution.scheduler import LiveConfig, live_and_journal
 
-    cfg = LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
-                     start=start, timeframe=timeframe, broker=broker, mode=mode,
-                     fraction=fraction, max_position_notional=max_position_notional,
-                     max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
+    if spec:
+        cfg = _cfg_from_spec(spec, symbol=symbol, broker=broker, mode=mode, fraction=fraction)
+    else:
+        if not symbol:
+            raise typer.BadParameter("give a SYMBOL or --spec NAME")
+        cfg = LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
+                         start=start, timeframe=timeframe, broker=broker, mode=mode,
+                         fraction=fraction, max_position_notional=max_position_notional,
+                         max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
     dec = live_and_journal(cfg, dry_run=not execute)
 
     label = "EXECUTE" if execute else "DRY-RUN"
-    typer.echo(f"\n[LIVE {label}] {strategy} on {symbol}  (broker={broker}, mode={mode})")
+    typer.echo(f"\n[LIVE {label}] {cfg.strategy} on {cfg.symbol}  (broker={broker}, mode={mode}"
+               + (f", spec={spec}" if spec else "") + ")")
     typer.echo(f"  bar              : {dec.ts}  close={dec.price:.2f}")
     typer.echo(f"  position before  : {dec.position_before:g}")
     if dec.target_state:
@@ -171,7 +201,10 @@ def live(
 
 @app.command()
 def schedule(
-    symbol: str,
+    symbol: str = typer.Argument("", help="ticker (omit when using --spec)"),
+    spec: list[str] = typer.Option([], "--spec",
+                                   help="named spec(s) from configs/strategies.json; repeat the "
+                                        "flag to schedule several strategies in this one process"),
     strategy: str = typer.Option("ma_cross", help="strategy name"),
     params: str = typer.Option("", help="e.g. 'lookback=100'"),
     start: str = typer.Option("2023-01-01", help="history start for signals"),
@@ -196,18 +229,26 @@ def schedule(
     """
     from quant.execution.scheduler import LiveConfig, run_schedule
 
-    cfg = LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
-                     start=start, timeframe=timeframe, broker=broker, mode=mode,
-                     fraction=fraction, max_position_notional=max_position_notional,
-                     max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
+    if spec:
+        if symbol:
+            raise typer.BadParameter("give either a SYMBOL or --spec name(s), not both")
+        cfgs = [_cfg_from_spec(s, broker=broker, mode=mode, fraction=fraction) for s in spec]
+    else:
+        if not symbol:
+            raise typer.BadParameter("give a SYMBOL or --spec NAME")
+        cfgs = [LiveConfig(symbol=symbol, strategy=strategy, params=_parse_params(params),
+                           start=start, timeframe=timeframe, broker=broker, mode=mode,
+                           fraction=fraction, max_position_notional=max_position_notional,
+                           max_daily_loss=max_daily_loss, stop_loss=stop_loss,
+                           take_profit=take_profit)]
     label = "EXECUTE" if execute else "DRY-RUN"
-    typer.echo(f"[SCHEDULE {label}] {strategy} on {symbol} (broker={broker}) "
-               f"at {at} {days} {tz}")
+    jobs = ", ".join(f"{c.strategy} on {c.symbol}" for c in cfgs)
+    typer.echo(f"[SCHEDULE {label}] {jobs} (broker={broker}) at {at} {days} {tz}")
     if execute:
         typer.echo("  ⚠ live order routing is ON. Ctrl+C to stop.")
     else:
         typer.echo("  dry-run: decisions are computed & journaled, no orders. Ctrl+C to stop.")
-    run_schedule([cfg], at=at, days=days, tz=tz, dry_run=not execute, run_now=run_now)
+    run_schedule(cfgs, at=at, days=days, tz=tz, dry_run=not execute, run_now=run_now)
 
 
 @app.command()

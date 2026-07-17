@@ -138,6 +138,71 @@ def test_lifecycle_unknown_spec_errors():
     assert "available" in r.output
 
 
+def test_cfg_from_spec_maps_identity_and_risk():
+    cfg = cli._cfg_from_spec("spy_momentum", broker="paper", mode="target", fraction=0.9)
+    assert cfg.symbol == "SPY" and cfg.strategy == "momentum"
+    assert cfg.params == {"lookback": 100}
+    assert cfg.start == "2020-01-01" and cfg.timeframe == "1d"
+    assert cfg.stop_loss == 0.05 and cfg.take_profit == 0.15
+    assert cfg.max_position_notional == 50_000
+    assert cfg.broker == "paper" and cfg.fraction == 0.9   # operational knobs from CLI
+
+
+def test_cfg_from_spec_explicit_symbol_wins():
+    cfg = cli._cfg_from_spec("spy_momentum", symbol="VOO", broker="paper",
+                             mode="target", fraction=0.95)
+    assert cfg.symbol == "VOO"                              # override, strategy unchanged
+    assert cfg.strategy == "momentum"
+
+
+def test_live_from_spec_stays_dry_run(monkeypatch):
+    import quant.execution.scheduler as sched
+    captured = {}
+
+    def fake_live_and_journal(cfg, *, dry_run=True, **kw):
+        captured.update(cfg=cfg, dry_run=dry_run)
+        return SimpleNamespace(ts="2024-01-02", price=100.0, position_before=0.0,
+                               target_state="long", action="buy", qty=10.0,
+                               reason="test", blocked=None, order_id=None,
+                               symbol=cfg.symbol, dry_run=dry_run)
+
+    monkeypatch.setattr(sched, "live_and_journal", fake_live_and_journal)
+    r = runner.invoke(cli.app, ["live", "--spec", "spy_momentum", "--broker", "paper"])
+    assert r.exit_code == 0, r.output
+    assert captured["dry_run"] is True                      # no --execute -> dry-run
+    assert captured["cfg"].symbol == "SPY"
+    assert captured["cfg"].stop_loss == 0.05                # risk block flowed from spec
+    assert "DRY-RUN" in r.output and "spec=spy_momentum" in r.output
+
+
+def test_live_without_symbol_or_spec_errors():
+    r = runner.invoke(cli.app, ["live", "--broker", "paper"])
+    assert r.exit_code != 0
+    assert "SYMBOL or --spec" in r.output
+
+
+def test_schedule_multiple_specs_one_process(monkeypatch):
+    import quant.execution.scheduler as sched
+    captured = {}
+
+    def fake_run_schedule(cfgs, *, at, days, tz, dry_run, run_now):
+        captured.update(cfgs=cfgs, dry_run=dry_run)
+
+    monkeypatch.setattr(sched, "run_schedule", fake_run_schedule)
+    r = runner.invoke(cli.app, ["schedule", "--spec", "spy_momentum",
+                                "--spec", "qqq_ma_cross", "--broker", "paper"])
+    assert r.exit_code == 0, r.output
+    assert [c.symbol for c in captured["cfgs"]] == ["SPY", "QQQ"]
+    assert captured["dry_run"] is True                      # dry-run default preserved
+    assert "momentum on SPY" in r.output and "ma_cross on QQQ" in r.output
+
+
+def test_schedule_rejects_symbol_and_spec_together(monkeypatch):
+    r = runner.invoke(cli.app, ["schedule", "SPY", "--spec", "spy_momentum"])
+    assert r.exit_code != 0
+    assert "not both" in r.output
+
+
 def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
 

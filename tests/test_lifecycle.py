@@ -99,6 +99,16 @@ def test_spec_rejects_unknown_keys(tmp_path):
         load_specs(p)
 
 
+def test_spec_can_never_enable_execution(tmp_path):
+    """Safety invariant: going live is a human CLI flag, never spec data. A spec
+    that tries to carry an 'execute' field must fail to load, loudly."""
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps({"a": {"symbol": "SPY", "strategy": "momentum",
+                                   "execute": True}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown key"):
+        load_specs(p)
+
+
 def test_spec_requires_symbol_and_strategy(tmp_path):
     p = tmp_path / "s.json"
     p.write_text(json.dumps({"a": {"symbol": "SPY"}}), encoding="utf-8")

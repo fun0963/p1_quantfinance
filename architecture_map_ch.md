@@ -11,8 +11,8 @@
 
 | 指標 | 數值 |
 |---|---|
-| 原始碼 | 66 個 `.py`、約 6,450 LOC(`src/quant/` + `config/`) |
-| 測試 | 35 個測試檔、**216 passed / 1 skipped**;ruff + mypy 全綠 |
+| 原始碼 | 66 個 `.py`、約 6,500 LOC(`src/quant/` + `config/`) |
+| 測試 | 35 個測試檔、**223 passed / 1 skipped**;ruff + mypy 全綠 |
 | Python | 3.11+(開發環境 3.13);`src/` layout,套件名 `quant` |
 | 進入點 | `quant` CLI(typer,24 指令)+ FastAPI 唯讀儀表盤 |
 | 架構評分 | 分層/耦合 **8/10**、測試/CI **8/10**、可維護性 **7/10**(已修正,見 §7) |
@@ -92,7 +92,7 @@
 | **quant/portfolio/** | 多策略權重配置與混合回測 | `portfolio.py`:`PortfolioLeg`/`PortfolioResult`/`run_portfolio()`/`load_portfolio_config()`;算混合 vs 加權平均、腿間相關、分散化比率 | backtest、strategies、data | `test_portfolio` |
 | **quant/research/** | 研究紀律層(M4)— 實驗記錄 + 生命週期 | `experiments.py`:`ExperimentStore`(SQLite `data/experiments.db`,WAL)記錄每次回測(git-hash/dirty、參數、資料窗、成本 bps、指標);`lifecycle.py`:`LifecycleRules`/`check_lifecycle()`(**M6.5 事前寫死的晉升/退場規則**:trailing 視窗 rolling Sharpe / 回撤 / 活動度,唯讀 `LifecycleReport`)。未來因子框架也放這 | config、utils、backtest.metrics(純函式) | `test_experiments/test_lifecycle` |
 | **quant/web/** | 唯讀結果儀表盤(FastAPI) | `app.py`:`create_app()`(App Factory);`routes.py`(7 端點:backtest/portfolio/sweep/walkforward/journal;薄包裝呼叫既有函式);`schemas.py`(pydantic 請求模型;backtest 含 slippage_bps);`static/index.html`(plotly.js CDN,無 Node 建置) | backtest、portfolio、execution、data | `test_web`(optional-dep skip) |
-| **quant/cli.py** | typer 進入點,串起所有層 | 24 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments/lifecycle`;`backtest` 含 `--spec/--slippage-bps/--calibrate/--report/--log`)、交易(`paper/live/schedule/protect/account`)、營運(`journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
+| **quant/cli.py** | typer 進入點,串起所有層 | 24 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments/lifecycle`;`backtest` 含 `--spec/--slippage-bps/--calibrate/--report/--log`)、交易(`paper/live/schedule/protect/account`;`live`/`schedule` 支援 `--spec`,`schedule --spec` 可重複=一程序多策略;**spec 不可含 `execute`,上實盤永遠是 CLI 明確旗標**)、營運(`journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls/_cfg_from_spec` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
 | **根目錄基建** | 打包 / 容器 / CI / 腳本 / 文件 | `pyproject.toml`(ruff line=120、mypy、pytest、extras `[timescale]`/`[web]`);`Dockerfile` + `docker-compose.yml`;`.github/workflows/ci.yml`(ruff+mypy+pytest);`scripts/`(`ci.ps1` 本機鏡像、`daily_live.ps1`);`docs/`(GUIDE/USAGE/DEPLOYMENT/SCHEDULING) | — | `scripts/ci.ps1` |
 
 ---
@@ -170,7 +170,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
    - 原始價 + 調整因子分離存放:才能真正重建 as-of 價格(動到 storage schema)。
    - ✅ **成本 / 滑價模型(M5.2/5.3,已完成)**:`backtest/costs.py` `CostModel`(fees+slippage);兩引擎 + sweep 支援 slippage;CLI `backtest --slippage-bps / --fees-bps / --calibrate`(`--calibrate` 讀 journal TCA 反推成本,打通 量測→校準→回測 閉環);web 儀表盤 backtest 分頁亦接上 slippage 旋鈕並顯示成本行。預設 slippage=0 保住 golden 回歸。
 2. **技術債清理**(見 §8,多為 P1/P2,價值高、風險低)。
-3. **Batch 3 — 研究深化**:✅ 實驗記錄系統(M4.5)、✅ 進階指標+一鍵報告(M5.6/5.7)、✅ **參數外部化(M6.3)**——`strategies/spec.py` + `configs/strategies.json`(params/risk/lifecycle 全進版控,`quant backtest --spec NAME`)、✅ **策略生命週期(M6.5)**——`research/lifecycle.py` 事前寫死的晉升/退場規則,`quant lifecycle --all` 健康檢查(breach 時 exit 1,可排程當閘門)。**待做**:live/schedule 吃 `--spec`(參數外部化接到實盤路徑)、研究知識庫(M4.6);因子庫/檢定與機會掃描器(卡存活者偏差)暫緩。
+3. **Batch 3 — 研究深化**:✅ 實驗記錄系統(M4.5)、✅ 進階指標+一鍵報告(M5.6/5.7)、✅ **參數外部化(M6.3)**——`strategies/spec.py` + `configs/strategies.json`(params/risk/lifecycle 全進版控,`quant backtest --spec NAME`)、✅ **策略生命週期(M6.5)**——`research/lifecycle.py` 事前寫死的晉升/退場規則,`quant lifecycle --all` 健康檢查(breach 時 exit 1,可排程當閘門)。✅ **spec 接進實盤路徑**——`live --spec` / `schedule --spec`(可重複,一程序多策略),策略身分+風控來自版控規格檔,`execute` 硬性 CLI-only。**待做**:研究知識庫(M4.6);因子庫/檢定與機會掃描器(卡存活者偏差)暫緩。
 4. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。
 
 ---

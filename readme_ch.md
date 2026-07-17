@@ -136,9 +136,9 @@ quant info                              # 確認設定與已註冊策略
 |------|------|
 | `quant paper SYMBOL` | 紙上交易完整流程(風控 + bracket + 紀錄) |
 | `quant account` | 檢查 Alpaca paper 連線(唯讀) |
-| `quant live SYMBOL` | 評估最新 K 並對齊部位(預設 dry-run,`--execute` 才送單) |
+| `quant live [SYMBOL]` | 評估最新 K 並對齊部位(預設 dry-run,`--execute` 才送單);`--spec NAME` 從規格檔帶入策略+風控 |
 | `quant protect SYMBOL` | 幫既有部位掛 OCO 停損停利(預設 dry-run) |
-| `quant schedule SYMBOL` | 排程每個交易日自動跑 live |
+| `quant schedule [SYMBOL]` | 排程每個交易日自動跑 live;`--spec` 可重複,**一個程序排多個策略** |
 
 **營運 / 監控:**
 
@@ -185,20 +185,21 @@ quant journal                    # 看這場 session
 
 ```powershell
 quant account                                        # ① 檢查連線(唯讀)
-quant live SPY --strategy momentum --params "lookback=100" `
-    --broker alpaca --stop-loss 0.05 --take-profit 0.15        # ② dry-run(只算+記錄)
+quant live --spec spy_momentum --broker alpaca       # ② dry-run:策略+風控全部來自版控規格檔
+# (等效的全參數寫法:quant live SPY --strategy momentum --params "lookback=100" --stop-loss 0.05 ...)
 # ③ 確認決策合理後再加 --execute 才真的送單
 quant protect SPY --stop-loss 0.05 --take-profit 0.15          # 幫既有部位補掛 OCO
 quant journal --live                                           # 看每次 live 決策
 ```
 - `--mode target`(預設)對齊「策略現在想要的部位」,一天跑一次/漏跑都安全(冪等)。
+- **`--execute` 永遠是 CLI 旗標**:規格檔裡不允許 `execute` 欄位(載入直接報錯),上實盤永遠是人的明確動作。
 - Alpaca 的 bracket/OCO 只吃整股,系統會自動把零股無條件捨去。
 
 ### 5. 自動排程
 
 ```powershell
-quant schedule SPY --strategy momentum --params "lookback=100" `
-    --broker alpaca --stop-loss 0.05 --take-profit 0.15 --run-now
+quant schedule --spec spy_momentum --spec qqq_ma_cross --broker alpaca --run-now
+# 一個程序排多個策略;每個 spec 的參數與風控都來自版控的規格檔
 ```
 長期推薦用 **Windows 工作排程器**(重開機也活),步驟見 [docs/SCHEDULING.md](docs/SCHEDULING.md)。
 排程每次觸發都會走:假日略過 → OMS 同步 → 對帳(不符即停+告警)→ 決策 → 紀錄 + heartbeat。
@@ -255,7 +256,6 @@ powershell -ExecutionPolicy Bypass -File scripts\ci.ps1   # ruff + mypy + pytest
 |------|------|------|
 | **存活者偏差** | **刻意圈定不做**(2026-07 決策):目前聚焦單標的/ETF 技術面擇時,此範圍幾乎無此偏差。⚠️ 觸發條件:未來要做「跨標的選股/掃描」時,必須先換 survivorship-free 資料源(Norgate/Sharadar)+ 建 as-of 宇宙,否則那類回測不可信 | 範圍決策 |
 | **原始價+調整因子分離存放** | yfinance 只能當原型;要真正重建 as-of 價格需換正式資料源(動到 storage schema) | Batch 2 剩餘 |
-| **spec 接進實盤路徑** | `configs/strategies.json` 已供 `backtest --spec` 與 `lifecycle` 使用;`live`/`schedule` 尚未吃 `--spec`(目前仍走 CLI 參數) | 研究線下一步 |
 | **研究知識庫(M4.6)** | 每個試過的想法一頁 Markdown(假設/做法/結果/失敗原因) | 研究線下一步 |
 | **IBKR 券商** | 用 `ib_async` 寫 `IBKRBroker` 接在 `Broker` 介面後面;IBKR 需本機跑 TWS/Gateway,比 Alpaca 重 | 未來 |
 | **盤中 / 即時行情** | websocket 串流 + 成交通知;目前以**日線**為主 | 選配 |
