@@ -559,6 +559,51 @@ def lifecycle(
     raise typer.Exit(code=1 if any_breach else 0)
 
 
+note_app = typer.Typer(help="Research knowledge base - one Markdown note per idea "
+                            "(hypothesis / approach / result / verdict).")
+app.add_typer(note_app, name="note")
+
+
+@note_app.command("new")
+def note_new(
+    title: str = typer.Argument(..., help="one-line name of the idea"),
+    status: str = typer.Option("idea", help="idea | testing | adopted | rejected"),
+    strategy: str = typer.Option("", help="related strategy name (optional)"),
+    symbols: str = typer.Option("", help="comma-separated tickers (optional)"),
+    experiments: str = typer.Option("", help="comma-separated experiment ids as evidence"),
+    notes_dir: str = typer.Option("", "--dir", help="notes directory (default: research_notes/)"),
+) -> None:
+    """Create a templated note; fill in hypothesis/approach/result, then commit it."""
+    from quant.research import create_note
+
+    exp_ids = [int(e) for e in experiments.split(",") if e.strip()]
+    syms = tuple(s.strip().upper() for s in symbols.split(",") if s.strip())
+    path = create_note(title, status=status, strategy=strategy, symbols=syms,
+                       experiments=exp_ids, notes_dir=notes_dir or None)
+    typer.echo(f"note created -> {path}")
+    typer.echo("fill in the sections, then commit it (failed ideas are worth the most)")
+
+
+@note_app.command("list")
+def note_list(
+    status: str = typer.Option("", help="filter: idea | testing | adopted | rejected"),
+    notes_dir: str = typer.Option("", "--dir", help="notes directory (default: research_notes/)"),
+) -> None:
+    """List knowledge-base notes, newest first."""
+    from quant.research import list_notes
+
+    notes = list_notes(notes_dir or None, status=status or None)
+    if not notes:
+        typer.echo("no notes yet - start one with: quant note new \"my idea\"")
+        return
+    typer.echo(f"\n{len(notes)} note(s):\n")
+    for n in notes:
+        exp = f" exp={','.join(map(str, n.experiments))}" if n.experiments else ""
+        strat = f" [{n.strategy}]" if n.strategy else ""
+        typer.echo(f"  {n.created}  {n.status:<8} {n.title}{strat}{exp}")
+        typer.echo(f"             -> {n.path.name}")
+
+
 @app.command()
 def paper(
     symbol: str,

@@ -203,6 +203,24 @@ def test_schedule_rejects_symbol_and_spec_together(monkeypatch):
     assert "not both" in r.output
 
 
+def test_note_new_and_list_end_to_end(tmp_path):
+    r = runner.invoke(cli.app, ["note", "new", "buffer filter idea", "--strategy", "momentum",
+                                "--symbols", "spy", "--experiments", "7", "--dir", str(tmp_path)])
+    assert r.exit_code == 0, r.output
+    assert "note created" in r.output
+
+    r2 = runner.invoke(cli.app, ["note", "list", "--dir", str(tmp_path)])
+    assert r2.exit_code == 0, r2.output
+    assert "buffer filter idea" in r2.output
+    assert "[momentum]" in r2.output and "exp=7" in r2.output
+
+
+def test_note_list_empty_dir_hints_how_to_start(tmp_path):
+    r = runner.invoke(cli.app, ["note", "list", "--dir", str(tmp_path / "none")])
+    assert r.exit_code == 0
+    assert "no notes yet" in r.output
+
+
 def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
 

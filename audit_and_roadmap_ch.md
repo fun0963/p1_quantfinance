@@ -138,7 +138,7 @@
 | **M1 資料收集** | 🟡 ~45% | 美股日線(yfinance+Alpaca)、OHLCV schema、品質檢查、快取、**point-in-time 歷史改寫偵測** | **存活者偏差、原始/調整價分離、基本面、總經、完整每日 ETL、品質強制化** |
 | **M2 公司資料庫** | ❌ | — | 全缺(公司主檔/財務指標/同業比較)—— 目前非我們路線 |
 | **M3 供應鏈** | ❌ | — | 全缺 —— 目前非我們路線 |
-| **M4 因子庫/研究框架** | 🟡 ~30% | journal 記 session、**實驗記錄系統(M4.5:`research/experiments.py`,git-hash/參數/資料窗/成本/指標)** | **因子計算框架、因子檢定(IC/RankIC)、研究知識庫(M4.6)** |
+| **M4 因子庫/研究框架** | 🟡 ~45% | journal 記 session、**實驗記錄系統(M4.5)**、**研究知識庫(M4.6:`research/notes.py` + `research_notes/`,`quant note new/list`,frontmatter 連實驗 id)** | **因子計算框架、因子檢定(IC/RankIC)** |
 | **M5 回測引擎** | 🟢 ~85% | 雙引擎、walk-forward、compute_metrics(+勝率/Alpha/Beta/**Sortino/Calmar**)、參數掃描、成本/滑價模型(M5.2/5.3 + TCA 校準)、**一鍵 HTML tear sheet(M5.7:`report.py`,含月報酬熱圖)** | 期權(範圍外) |
 | **M6 策略/組合** | 🟢 ~60% | BaseStrategy 介面、ma_cross/momentum、portfolio 權重配置、**參數外部化(M6.3:`strategies/spec.py` + `configs/strategies.json`,回測/實盤/排程同一份 spec)**、**策略生命週期(M6.5:`research/lifecycle.py` 事前寫死晉升/退場規則 + `quant lifecycle`)** | **機會掃描器(卡存活者偏差)、波動率倒數/風險平價配置** |
 | **M7 風險管理** | 🟢 ~65%(P0 已修) | RiskGate、部位上限、paper 的 bracket 熔斷、**live 熔斷已修(P0#5)、對帳(P0#6)** | **曝險彙總、風控事件完整日誌** |
