@@ -35,3 +35,33 @@ def test_alpaca_rejects_unknown_timeframe(monkeypatch):
     )
     with pytest.raises(ValueError, match="unsupported timeframe"):
         af.AlpacaFeed().get_history("SPY", start=START, timeframe="5m")
+
+
+@pytest.mark.parametrize("timeframe,expected", [("1min", "iex"), ("1d", "sip")])
+def test_alpaca_feed_choice_by_timeframe(monkeypatch, timeframe, expected):
+    """Regression: the free plan's SIP historical feed withholds the last 15
+    minutes, so intraday requests must pin IEX or the newest minute bar always
+    fails the live freshness gate (941s-old bar vs 300s, seen in production)."""
+    pytest.importorskip("alpaca")
+    import alpaca.data.historical as hist
+
+    import quant.data.feeds.alpaca_feed as af
+
+    captured = {}
+
+    class _StubClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_stock_bars(self, req):
+            captured["feed"] = req.feed
+            raise ValueError("captured - stop here")   # fatal for with_retries: no retry
+
+    monkeypatch.setattr(hist, "StockHistoricalDataClient", _StubClient)
+    monkeypatch.setattr(
+        af, "get_settings",
+        lambda: type("S", (), {"alpaca_api_key": "k", "alpaca_secret_key": "s"})(),
+    )
+    with pytest.raises(ValueError, match="captured"):
+        af.AlpacaFeed().get_history("QQQ", start=START, timeframe=timeframe)
+    assert str(captured["feed"]).split(".")[-1].lower() == expected

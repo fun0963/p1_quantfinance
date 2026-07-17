@@ -45,13 +45,24 @@ class AlpacaFeed(DataFeed):
         amount, unit = _TIMEFRAME[timeframe]
 
         # Lazy imports keep alpaca-py optional until this feed is actually used.
+        from alpaca.data.enums import DataFeed as AlpacaDataFeed
         from alpaca.data.historical import StockHistoricalDataClient
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+
+        from quant.data.timeframes import get_timeframe
+
         tf = TimeFrame(int(amount), getattr(TimeFrameUnit, unit))
 
         client = StockHistoricalDataClient(self._key, self._secret)
-        req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=tf, start=start, end=end)
+        # Intraday must be IEX: on the free plan the default (SIP) withholds the
+        # most recent 15 minutes, so the newest minute bar always failed the live
+        # freshness gate (941s-old bar vs a 300s tolerance, observed in the first
+        # real intraday run). IEX is real-time on the free tier; settled daily
+        # bars keep the fuller SIP consolidated feed.
+        feed = AlpacaDataFeed.IEX if get_timeframe(timeframe).intraday else AlpacaDataFeed.SIP
+        req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=tf, start=start, end=end,
+                               feed=feed)
         log.debug(f"alpaca fetch {symbol} {timeframe} from {start}")
         # alpaca-py types the response as BarSet | dict; .df is the documented BarSet API.
         bars = with_retries(
