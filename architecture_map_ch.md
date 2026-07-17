@@ -203,6 +203,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 - **`quant` CLI**:`./.venv/Scripts/python.exe -m quant.cli <cmd>`。`quant info` 看設定與策略;實盤 `quant live/schedule` **預設 dry-run**,要真下單得加 `--execute`(且 `ALPACA_PAPER=true` 硬性守門)。
 - **⚠️ committed-tree 驗證(重要教訓)**:曾因 `.gitignore` 的 `data/` 誤傷 `src/quant/data/` 整包沒進版控,CI 全掛。**驗 CI 失敗要用 `git archive HEAD` 匯出「已提交的樹」再跑測試**,不要只跑 working tree。新增檔案 commit 前先 `git check-ignore` 確認不被吃掉。詳見 memory `verify-against-committed-tree`。
 - **⚠️ Windows cp950 主控台**:印到終端 / 推 Telegram 的字串**避免 em-dash(—)等 Unicode**,會變亂碼甚至 encode 錯誤。慣例:**docstring 可用 em-dash,但 `summary()` 等會被印出的字串一律用連字號 `-`**。用 Python 讀 JSON 印中文時設 `PYTHONIOENCODING=utf-8`。
+- **⚠️ alpaca-py 的 str-Enum 序列化陷阱**:`str(OrderSide.SELL)` 是 `"OrderSide.SELL"` 不是 `"sell"`(同 pyproject 記載的 UP042 議題)。任何要跟 `"buy"/"sell"` 比對的地方必須用 `str(x).split(".")[-1].lower()` 正規化。曾讓 reconcile 誤報「無保護單」+ live 的重複進場防線(`_has_open_buy`)在真 broker 上靜默失效——**離線測試抓不到**(PaperBroker 開放單恆為空),是第一次真實營運跑才逮到的。修在 `alpaca_broker.get_open_orders`。
 - **⚠️ yfinance `auto_adjust=True` 會回溯改寫歷史**:除權息後全部歷史價變樣,`load_bars` 重抓會覆蓋快取。`data/integrity.py` 會**偵測 + 告警 + 記 `integrity_events.csv`**,但目前**不阻止覆蓋**(見技術債 #3)。
 - **ops 寫入是 best-effort**:OMS / heartbeat / 對帳 / 告警的失敗**絕不能阻斷交易**,都包在 try/except 並大聲記 log。改這些路徑時保持此不變式。
 - **失敗預設安全不變式**(勿破壞):過期資料拒單、無訊號 hold 不清倉、止損賣單永遠放行(即使日虧熔斷)、實盤下單前先對帳、告警 `send()` 永不 raise。

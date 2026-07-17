@@ -125,8 +125,12 @@ class AlpacaBroker(Broker):
 
         req = GetOrdersRequest(status=QueryOrderStatus.OPEN,
                                symbols=[symbol] if symbol else None)
+        # str(OrderSide.SELL) is "OrderSide.SELL", not "sell" - normalize like
+        # order_status does, or every side == "buy"/"sell" comparison upstream
+        # (open-buy guard, reconcile's protected check) silently never matches.
         return [
-            {"id": str(o.id), "symbol": o.symbol, "side": str(o.side).lower(),
+            {"id": str(o.id), "symbol": o.symbol,
+             "side": str(o.side).split(".")[-1].lower(),
              "qty": float(o.qty or 0)}
             for o in self._client().get_orders(filter=req)
         ]
