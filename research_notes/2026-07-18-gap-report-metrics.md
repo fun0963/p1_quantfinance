@@ -1,6 +1,6 @@
 ---
 title: tool gap scan: report metrics vs QuantConnect and QuantStats
-status: idea
+status: adopted
 strategy: 
 symbols: 
 experiments: 
@@ -44,11 +44,16 @@ recovery factor、Kelly criterion、tail ratio、common sense ratio、skew/kurto
    = lifecycle 檢查的那個數字**(同 compute_metrics 慣例,收斂一致性有測試釘住)。
    實測 SPY momentum:現值 1.26、歷史 -1.26~2.88——衰退趨勢與距退場線的餘裕
    直接看得見。短序列(< 窗+5)自動省略面板。
-3. **profit factor + payoff ratio**:交易員通用語言,計算成本趨近零。
-4. **turnover(年化換手)**:直接接上成本預算檢查(walkthrough 階段 1.3 的心算
-   可以變成報告裡的實數)。
-5. **PSR**:把「這個 Sharpe 是不是運氣」量化,樣本短時特別誠實。
-6. Monte Carlo bust/goal 機率:錦上添花。
+3. ✅ profit factor + payoff ratio:本就在表中(trade_stats),無需動作。
+4. ✅ **turnover 年化換手(2026-07-18 完成)**:成交總名目/平均權益/年,
+   `Turnover (annual)` 列。成本預算實數化:年成本拖累 bps ≈ turnover × 單邊 bps。
+   實測 SPY momentum:**5.18x/年** → 假設 5bps 時 ~26bps/年、實測 ~1bps 時 ~5bps/年。
+   限制:需要 Size+價格欄(vbt 有;backtrader log 無 → 優雅回 None)。
+5. ✅ **PSR(2026-07-18 完成)**:Bailey-López de Prado 公式(偏態/峰度修正、
+   math.erf 免 scipy),`compute_metrics` 全域新增 `psr_pct`(CLI 表與 --json 同步有)。
+   錨點測試:SR=0 → 恰 50%、樣本變長信心單調上升。實測 SPY momentum:**99.7%**
+   ——6.5 年樣本下 Sharpe 1.07 統計上為真。
+6. Monte Carlo bust/goal 機率:錦上添花,留待有需要再做。
 
 **跳過**:capacity(我們的規模無意義)、Treynor/IR/tracking error(機構指標)、
 Long/Short 拆欄(目前 long-only)。

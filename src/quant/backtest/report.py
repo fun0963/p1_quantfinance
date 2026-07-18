@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from quant.backtest.base import BacktestResult
-from quant.backtest.metrics import monthly_returns
+from quant.backtest.metrics import monthly_returns, turnover_annual
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -31,10 +31,12 @@ _METRIC_ROWS = [
     ("excess_return_pct", "Excess vs benchmark", "%"),
     ("cagr_pct", "CAGR", "%"),
     ("sharpe", "Sharpe", ""),
+    ("psr_pct", "PSR (Sharpe>0)", "%"),
     ("sortino", "Sortino", ""),
     ("calmar", "Calmar", ""),
     ("max_drawdown_pct", "Max drawdown", "%"),
     ("num_trades", "Trades", ""),
+    ("turnover_annual_x", "Turnover (annual)", "x"),
     ("win_rate_pct", "Win rate", "%"),
     ("payoff_ratio", "Payoff ratio", ""),
     ("profit_factor", "Profit factor", ""),
@@ -161,6 +163,9 @@ def build_report(
     bars = data if (data is not None and not data.empty) else None
     has_price = bars is not None
     metrics = dict(metrics)                       # never mutate the caller's dict
+    tov = turnover_annual(result.trades, eq, timeframe)
+    if tov is not None:
+        metrics["turnover_annual_x"] = round(tov, 2)
     bench = None
     if bars is not None:
         close = bars["close"].astype(float)

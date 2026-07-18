@@ -82,3 +82,62 @@ def test_yearly_returns_per_calendar_year():
     yr = yearly_returns(eq)
     assert yr[2020] == pytest.approx(10.0, abs=0.1)
     assert yr[2021] == pytest.approx(-10.0, abs=0.1)
+
+
+# --- PSR (probabilistic Sharpe) ----------------------------------------------
+def test_psr_is_50pct_at_zero_sharpe():
+    """SR=0 -> z=0 -> PSR exactly 50%, independent of higher moments."""
+    from quant.backtest.metrics import _psr_pct
+    rets = pd.Series([0.01, -0.01] * 100)               # mean exactly 0
+    assert _psr_pct(rets) == 50.0
+
+
+def test_psr_grows_with_sample_length():
+    """Same positive edge, more evidence -> higher confidence the Sharpe is real."""
+    from quant.backtest.metrics import _psr_pct
+    rng = np.random.default_rng(7)
+    rets = pd.Series(rng.normal(0.001, 0.01, 2000))
+    short, long = _psr_pct(rets.iloc[:100]), _psr_pct(rets)
+    assert short is not None and long is not None
+    assert 0.0 <= short <= 100.0 and 0.0 <= long <= 100.0
+    assert long > short
+
+
+def test_compute_metrics_includes_psr():
+    idx = pd.date_range("2020-01-01", periods=300, freq="B", tz="UTC")
+    rng = np.random.default_rng(1)
+    eq = pd.Series(100 * np.exp(np.cumsum(rng.normal(0.0005, 0.01, 300))), index=idx)
+    m = compute_metrics(eq)
+    assert m["psr_pct"] is not None and 0.0 <= m["psr_pct"] <= 100.0
+
+
+# --- annualized turnover -----------------------------------------------------
+def test_turnover_hand_computed_round_trip():
+    """1 year of flat 100k equity, one 1000-share round trip at 100:
+    (100k entry + 100k exit) / 100k avg equity / 1 year = 2.0x."""
+    from quant.backtest.metrics import turnover_annual
+    idx = pd.date_range("2020-01-01", periods=253, freq="B", tz="UTC")  # 252 periods = 1y
+    eq = pd.Series(100_000.0, index=idx)
+    trades = pd.DataFrame({"Size": [1000.0], "Avg Entry Price": [100.0],
+                           "Avg Exit Price": [100.0]})
+    assert turnover_annual(trades, eq) == pytest.approx(2.0)
+
+
+def test_turnover_open_trade_counts_entry_side_only():
+    from quant.backtest.metrics import turnover_annual
+    idx = pd.date_range("2020-01-01", periods=253, freq="B", tz="UTC")
+    eq = pd.Series(100_000.0, index=idx)
+    trades = pd.DataFrame({"Size": [1000.0], "Avg Entry Price": [100.0],
+                           "Avg Exit Price": [np.nan]})                 # still open
+    assert turnover_annual(trades, eq) == pytest.approx(1.0)
+
+
+def test_turnover_none_for_backtrader_schema_and_empty():
+    from quant.backtest.metrics import turnover_annual
+    idx = pd.date_range("2020-01-01", periods=50, freq="B", tz="UTC")
+    eq = pd.Series(100_000.0, index=idx)
+    bt_trades = pd.DataFrame({"entry_time": [idx[1]], "entry_price": [100.0],
+                              "pnl": [5.0]})                            # no Size column
+    assert turnover_annual(bt_trades, eq) is None
+    assert turnover_annual(None, eq) is None
+    assert turnover_annual(pd.DataFrame(), eq) is None

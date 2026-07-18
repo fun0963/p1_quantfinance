@@ -6,10 +6,36 @@ apples-to-apples comparison between VectorBT and Backtrader.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 
 from quant.data.timeframes import get_timeframe
+
+
+def _psr_pct(rets: pd.Series) -> float | None:
+    """Probabilistic Sharpe Ratio (Bailey & Lopez de Prado): probability that
+    the TRUE Sharpe exceeds 0, given the sample length and the non-normality
+    (skew/kurtosis) of returns. The honesty metric for short samples - a lucky
+    six-month Sharpe 2 scores far lower than a five-year one. Uses the
+    per-period Sharpe (annualization cancels out of the probability)."""
+    n = len(rets)
+    if n < 4:                                   # kurtosis needs 4 observations
+        return None
+    std = float(rets.std())
+    if not std or std <= 0 or math.isnan(std):
+        return None
+    sr = float(rets.mean()) / std
+    skew = float(rets.skew())
+    kurt = float(rets.kurt()) + 3.0             # pandas reports EXCESS kurtosis
+    if math.isnan(skew) or math.isnan(kurt):
+        return None
+    var_term = 1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr * sr
+    if var_term <= 0:                           # pathological higher moments
+        return None
+    z = sr * math.sqrt(n - 1) / math.sqrt(var_term)
+    return round(0.5 * (1.0 + math.erf(z / math.sqrt(2.0))) * 100.0, 1)
 
 
 def compute_metrics(
@@ -54,12 +80,41 @@ def compute_metrics(
         "total_return_pct": round(total_return * 100, 2),
         "cagr_pct": round(cagr * 100, 2) if not np.isnan(cagr) else None,
         "sharpe": round(sharpe, 2) if not np.isnan(sharpe) else None,
+        "psr_pct": _psr_pct(rets),
         "sortino": round(sortino, 2) if not np.isnan(sortino) else None,
         "calmar": round(calmar, 2) if not np.isnan(calmar) else None,
         "max_drawdown_pct": round(max_dd * 100, 2),
         "num_trades": num_trades,
         "final_equity": round(float(eq.iloc[-1]), 2),
     }
+
+
+def turnover_annual(trades: pd.DataFrame | None, equity_curve: pd.Series,
+                    timeframe: str = "1d") -> float | None:
+    """Gross traded notional per year as a multiple of average equity.
+
+    The cost-budget link: annual cost drag (bps) ~= turnover x per-side cost
+    (bps), because every side pays costs on its own notional. Needs size and
+    price columns (vectorbt's records_readable); returns None when they are
+    absent (backtrader's trade log carries no size) or the window degenerates.
+    Open trades count their entry side only (exit price is NaN).
+    """
+    if trades is None or len(trades) == 0:
+        return None
+    size = trades.get("Size")
+    entry_px = trades.get("Avg Entry Price")
+    exit_px = trades.get("Avg Exit Price")
+    if size is None or entry_px is None or exit_px is None:
+        return None
+    notional = float((size.abs() * entry_px.abs()).sum()
+                     + (size.abs() * exit_px.fillna(0.0).abs()).sum())
+    eq = equity_curve.dropna().astype(float)
+    if len(eq) < 2 or eq.mean() <= 0:
+        return None
+    years = (len(eq) - 1) / get_timeframe(timeframe).periods_per_year
+    if years <= 0:
+        return None
+    return float(notional / eq.mean() / years)
 
 
 def trade_stats(trades: pd.DataFrame | None, pnl_col: str = "PnL") -> dict:

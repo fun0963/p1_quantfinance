@@ -619,8 +619,8 @@ def backtest(
     echo(f"\n{strat}  on  {symbol}  "
          f"({len(data)} bars, {data.index[0].date()} -> {data.index[-1].date()})")
     echo(cost.summary())
-    keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "sortino", "calmar",
-            "max_drawdown_pct", "num_trades"]
+    keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "psr_pct",
+            "sortino", "calmar", "max_drawdown_pct", "num_trades"]
     header = f"{'metric':<20}" + "".join(f"{n:>14}" for n in results)
     echo(header)
     echo("-" * len(header))

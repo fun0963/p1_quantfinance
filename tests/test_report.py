@@ -41,6 +41,7 @@ def test_report_with_data_adds_price_panel_and_benchmark(tmp_path):
     res = _result()
     data = _bars(res.equity_curve.index)
     trades = pd.DataFrame({                      # vectorbt records_readable schema
+        "Size": [10.0, 12.0],
         "Entry Timestamp": [data.index[30], data.index[120]],
         "Avg Entry Price": [float(data["close"].iloc[30]), float(data["close"].iloc[120])],
         "Exit Timestamp": [data.index[90], data.index[200]],
@@ -57,6 +58,9 @@ def test_report_with_data_adds_price_panel_and_benchmark(tmp_path):
     assert "Excess vs benchmark" in html
     # both marker traces made it in
     assert '"entry"' in html and '"exit"' in html
+    # trade table has Size+prices -> annualized turnover row; PSR always tabulated
+    assert "Turnover (annual)" in html
+    assert "PSR (Sharpe&gt;0)" in html or "PSR (Sharpe>0)" in html
 
 
 def test_trade_marks_backtrader_schema_falls_back_to_close(tmp_path):
