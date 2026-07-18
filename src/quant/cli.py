@@ -17,6 +17,8 @@ from pathlib import Path
 import typer
 
 from config import get_settings
+from quant.readapi import df_records as _df_records
+from quant.readapi import json_default as _json_default
 from quant.utils import get_logger, setup_logging
 
 app = typer.Typer(help="Quant trading system CLI", no_args_is_help=True)
@@ -76,31 +78,9 @@ def _parse_legs(spec: str) -> list:
 
 
 # --- machine-readable output (--json) ----------------------------------------
+# Payload builders live in quant.readapi, SHARED with the read-only MCP server
+# so the two surfaces can never drift apart.
 _JSON_HELP = "machine-readable JSON on stdout (one document; for scripts/AI agents)"
-
-
-def _df_records(df) -> list:
-    """DataFrame -> plain-JSON records (NaN -> null, timestamps -> ISO strings)."""
-    import json
-
-    return json.loads(df.to_json(orient="records", date_format="iso"))
-
-
-def _json_default(o):
-    """Serialize what stdlib json can't: numpy scalars stay NUMBERS (an agent
-    doing math on "sharpe" must not get a string); everything else -> str
-    (Timestamps, Paths, dates, enums)."""
-    import numpy as np
-
-    if isinstance(o, np.bool_):
-        return bool(o)
-    if isinstance(o, np.integer):
-        return int(o)
-    if isinstance(o, np.floating):
-        return float(o)
-    if isinstance(o, np.ndarray):
-        return o.tolist()
-    return str(o)
 
 
 def _emit_json(command: str, data, ok: bool | None = None) -> None:
@@ -413,80 +393,16 @@ def status(
     never hides local state. Exit 1 when any checked section is not ok.
     Note: specs are LISTED from config only; run `quant lifecycle --all` for verdicts.
     """
-    from dataclasses import asdict
+    from quant.readapi import status_snapshot
 
-    from quant.execution import TradeJournal
-    from quant.ops.health import health_check
-    from quant.ops.reconcile import reconcile as run_reconcile
-    from quant.ops.tca import tca_report
-    from quant.strategies.spec import load_specs
-
-    checked_at = datetime.now(UTC).isoformat(timespec="seconds")
-    sections: dict = {"checked_at": checked_at, "broker_name": broker}
-    checks: list[bool] = []
-
-    if offline:
-        sections["broker"] = {"skipped": "offline"}
-    else:
-        try:
-            brk = _live_broker(broker)
-            summary = brk.account_summary() if hasattr(brk, "account_summary") else {}
-            positions = brk.get_positions()
-            with TradeJournal() as tj:
-                rec = run_reconcile(brk, tj)
-            sections["broker"] = {
-                "account": summary,
-                "positions": [{"symbol": p.symbol, "qty": p.qty, "avg_price": p.avg_price}
-                              for p in positions],
-                "reconcile": {"ok": rec.ok, "summary": rec.summary(),
-                              "issues": [asdict(i) for i in rec.issues]},
-            }
-            checks.append(rec.ok)
-        except Exception as exc:  # noqa: BLE001 - degrade this section, keep the rest
-            sections["broker"] = {"error": f"{type(exc).__name__}: {exc}"}
-            checks.append(False)
-
-    try:
-        with TradeJournal() as tj:
-            hrep = health_check(tj, max_silence_minutes=max_silence_minutes)
-        sections["health"] = {"ok": hrep.ok, "summary": hrep.summary(),
-                              "problems": hrep.problems,
-                              "components": [asdict(c) for c in hrep.components]}
-        checks.append(hrep.ok)
-    except Exception as exc:  # noqa: BLE001
-        sections["health"] = {"error": f"{type(exc).__name__}: {exc}"}
-        checks.append(False)
-
-    try:
-        with TradeJournal() as tj:
-            live_rows = tj.live_log(limit=limit)
-            orders = tj.orders(limit=limit)
-            trep = tca_report(tj)
-        cols = ["id", "symbol", "side", "qty", "status", "avg_fill_price", "broker_order_id"]
-        avail = [c for c in cols if c in orders.columns]
-        sections["recent_decisions"] = _df_records(live_rows)
-        sections["recent_orders"] = _df_records(orders[avail]) if not orders.empty else []
-        sections["tca"] = {"summary": trep.summary(), "n_filled": trep.n_filled,
-                           "avg_slippage_bps": trep.avg_slippage_bps,
-                           "total_cost_usd": trep.total_cost_usd}
-    except Exception as exc:  # noqa: BLE001
-        sections["journal_error"] = f"{type(exc).__name__}: {exc}"
-        checks.append(False)
-
-    try:
-        sections["specs"] = [{"name": sp.name, "symbol": sp.symbol, "strategy": sp.strategy,
-                              "timeframe": sp.timeframe, "state": sp.state}
-                             for sp in load_specs(None).values()]
-    except Exception as exc:  # noqa: BLE001
-        sections["specs"] = {"error": f"{type(exc).__name__}: {exc}"}
-        checks.append(False)
-
-    overall = all(checks) if checks else True
+    sections, overall = status_snapshot(broker=broker, offline=offline,
+                                        max_silence_minutes=max_silence_minutes,
+                                        limit=limit, broker_factory=_live_broker)
     if as_json:
         _emit_json("status", sections, ok=overall)
         raise typer.Exit(code=0 if overall else 1)
 
-    typer.echo(f"\n[STATUS] broker={broker}  checked {checked_at}")
+    typer.echo(f"\n[STATUS] broker={broker}  checked {sections['checked_at']}")
     b = sections["broker"]
     if "skipped" in b:
         typer.echo("  broker    : (skipped - offline)")
@@ -760,18 +676,27 @@ def experiments(
     """Review logged backtest experiments (the anti-overfitting research log)."""
     from quant.research import ExperimentStore
 
+    if as_json:
+        from quant.readapi import experiment_get, experiments_list
+
+        if show:
+            out = experiment_get(show)
+            if "error" in out:
+                _emit_json("experiments", out, ok=False)
+                raise typer.Exit(code=1)
+            _emit_json("experiments", {"mode": "one", **out})
+            return
+        _emit_json("experiments", {"mode": "list",
+                                   **experiments_list(strategy=strategy or None,
+                                                      symbol=symbol or None, limit=limit)})
+        return
+
     with ExperimentStore() as store:
         if show:
             rec = store.get(show)
             if rec is None:
-                if as_json:
-                    _emit_json("experiments", {"error": f"no experiment #{show}"}, ok=False)
-                    raise typer.Exit(code=1)
                 typer.echo(f"no experiment #{show}")
                 raise typer.Exit(code=1)
-            if as_json:
-                _emit_json("experiments", {"mode": "one", "record": rec})
-                return
             dirty = " (dirty)" if rec["git_dirty"] else ""
             typer.echo(f"\nexperiment #{rec['id']}  {rec['kind']}  {rec['symbol']}/{rec['strategy']}")
             typer.echo(f"  run_at   : {rec['run_at']}")
@@ -784,9 +709,6 @@ def experiments(
                 typer.echo(f"  notes    : {rec['notes']}")
             return
         df = store.recent(limit=limit, strategy=strategy or None, symbol=symbol or None)
-        if as_json:
-            _emit_json("experiments", {"mode": "list", "records": _df_records(df)})
-            return
         if df.empty:
             typer.echo("no experiments logged yet (run `quant backtest ...`)")
             return
@@ -890,14 +812,13 @@ def note_list(
     """List knowledge-base notes, newest first."""
     from quant.research import list_notes
 
-    notes = list_notes(notes_dir or None, status=status or None)
     if as_json:
-        _emit_json("note.list", {"records": [
-            {"title": n.title, "status": n.status, "created": n.created,
-             "strategy": n.strategy or None, "symbols": n.symbols,
-             "experiments": n.experiments, "path": str(n.path)}
-            for n in notes]})
+        from quant.readapi import notes_list
+
+        _emit_json("note.list", notes_list(status=status or None,
+                                           notes_dir=notes_dir or None))
         return
+    notes = list_notes(notes_dir or None, status=status or None)
     if not notes:
         typer.echo("no notes yet - start one with: quant note new \"my idea\"")
         return
@@ -1161,6 +1082,22 @@ def web(
 
 
 @app.command()
+def mcp() -> None:
+    """Launch the READ-ONLY MCP server (stdio) so AI agents can query the system.
+
+    Monitoring & research tools only - deliberately NO trading actions exist
+    there (see src/quant/mcp_server.py). Claude Code picks it up via the
+    committed .mcp.json; other clients can run this command directly.
+    """
+    try:
+        from quant.mcp_server import main
+    except ModuleNotFoundError:
+        typer.echo('mcp deps not installed - run:  pip install -e ".[mcp]"')
+        raise typer.Exit(code=1) from None
+    main()
+
+
+@app.command()
 def reconcile(
     broker: str = typer.Option("alpaca", help="alpaca | paper"),
     alert: bool = typer.Option(False, "--alert", help="also send an alert on any issue"),
@@ -1236,14 +1173,14 @@ def oms(
             synced = OMS(tj).sync(_live_broker(broker))
             if not as_json:
                 typer.echo(f"synced: {synced} order(s) advanced\n")
+        if as_json:
+            from quant.readapi import orders_snapshot
+
+            _emit_json("oms", {"synced": synced, **orders_snapshot(limit=limit)})
+            return
         rows = tj.orders(limit=limit)
         cols = ["id", "symbol", "side", "qty", "status", "intended_price",
                 "avg_fill_price", "filled_qty", "broker_order_id"]
-        if as_json:
-            avail = [c for c in cols if c in rows.columns]
-            _emit_json("oms", {"synced": synced, "db": str(tj.path),
-                               "records": _df_records(rows[avail]) if not rows.empty else []})
-            return
         if rows.empty:
             typer.echo("no orders tracked yet - place one via `quant live --execute`")
             return
@@ -1261,20 +1198,16 @@ def tca(
     from quant.execution import TradeJournal
     from quant.ops.tca import tca_report
 
+    if as_json:
+        from quant.readapi import tca_snapshot
+
+        _emit_json("tca", tca_snapshot(strategy=strategy or None, limit=limit))
+        return
     with TradeJournal() as tj:
         rep = tca_report(tj, strategy=strategy or None, limit=limit)
     cols = ["symbol", "side", "filled_qty", "intended_price", "avg_fill_price",
             "slippage_bps", "total_cost_usd"]
     avail = [c for c in cols if c in rep.per_order.columns]
-    if as_json:
-        stats = {k: getattr(rep, k) for k in (
-            "n_orders", "n_filled", "fill_rate", "avg_slippage_bps",
-            "median_slippage_bps", "worst_slippage_bps", "total_slippage_usd",
-            "total_commission_usd", "total_cost_usd", "total_notional_usd",
-            "cost_bps_of_notional")}
-        _emit_json("tca", {"summary": rep.summary(), **stats,
-                           "per_order": _df_records(rep.per_order[avail]) if rep.n_filled else []})
-        return
     typer.echo("\n" + rep.summary())
     if rep.n_filled:
         typer.echo("\nper-order:")
@@ -1288,29 +1221,23 @@ def health(
     as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """System health: per-component heartbeats and missed-run detection."""
-    from dataclasses import asdict
-
-    from quant.execution import TradeJournal
-    from quant.ops.health import health_check
     from quant.ops.notify import get_notifier
+    from quant.readapi import health_snapshot
 
-    with TradeJournal() as tj:
-        rep = health_check(tj, max_silence_minutes=max_silence_minutes)
+    h = health_snapshot(max_silence_minutes=max_silence_minutes)
+    ok = bool(h["ok"])
     if as_json:
-        _emit_json("health", {
-            "summary": rep.summary(), "checked_at": rep.checked_at,
-            "max_silence_minutes": rep.max_silence_minutes, "problems": rep.problems,
-            "components": [asdict(c) for c in rep.components],
-        }, ok=rep.ok)
+        data = {k: v for k, v in h.items() if k != "ok"}
+        _emit_json("health", data, ok=ok)
     else:
-        typer.echo("\n" + rep.summary())
-        for c in rep.components:
-            age = f"{c.age_minutes:.0f}m ago" if c.age_minutes is not None else "never"
-            flag = "  <<< STALE" if c.stale else ""
-            typer.echo(f"  {c.component:<12} {c.status:<8} {age}{flag}  {c.detail}")
-    if alert and not rep.ok:
-        get_notifier().critical("Health degraded", "; ".join(rep.problems))
-    raise typer.Exit(code=0 if rep.ok else 1)
+        typer.echo("\n" + h["summary"])
+        for c in h["components"]:
+            age = f"{c['age_minutes']:.0f}m ago" if c["age_minutes"] is not None else "never"
+            flag = "  <<< STALE" if c["stale"] else ""
+            typer.echo(f"  {c['component']:<12} {c['status']:<8} {age}{flag}  {c['detail']}")
+    if alert and not ok:
+        get_notifier().critical("Health degraded", "; ".join(h["problems"]))
+    raise typer.Exit(code=0 if ok else 1)
 
 
 @app.command()

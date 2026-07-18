@@ -18,7 +18,7 @@ p1_quantfinance/
 ├── config/settings.py        # 全系統唯一設定來源(pydantic + .env)
 ├── configs/strategies.json   # ⭐ 具名策略規格:params/風控/生命週期規則(版控)
 ├── src/quant/                # 主程式(約 6,400 行)
-│   ├── cli.py                # ⭐ 進入點:25 個 typer 指令
+│   ├── cli.py                # ⭐ 進入點:26 個 typer 指令
 │   ├── core/                 # 共通型別(Signal/Order)
 │   ├── utils/                # loguru 日誌
 │   ├── data/                 # 行情抓取、快取、品質、完整性
@@ -30,7 +30,7 @@ p1_quantfinance/
 │   ├── ops/                  # 營運:告警、對帳、OMS、TCA、健康、偏差
 │   ├── research/             # 研究紀律:實驗記錄系統
 │   └── web/                  # 唯讀網頁儀表盤(FastAPI)
-├── tests/                    # 36 個測試檔、233 個測試(鏡像 src/)
+├── tests/                    # 39 個測試檔、273 個測試(鏡像 src/)
 ├── scripts/                  # ci.ps1(本機 CI)、trading.cmd/.ps1(一鍵啟停)、daily_live.ps1
 ├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
 ├── research_notes/           # ⭐ 研究知識庫:一個想法一頁(假設/做法/結果/結論)
@@ -56,7 +56,7 @@ p1_quantfinance/
 | [research_notes/2026-07-18-qqq-slippage-near-zero.md](research_notes/2026-07-18-qqq-slippage-near-zero.md) | adopted | 實測 QQQ 小額市價單滑價 ~0 bps(19/19 成交) |
 | [research_notes/2026-07-18-gap-tradingview-ux.md](research_notes/2026-07-18-gap-tradingview-ux.md) | idea | 對照 TradingView 的人性化缺口(K 線進出點圖等) |
 | [research_notes/2026-07-18-gap-report-metrics.md](research_notes/2026-07-18-gap-report-metrics.md) | idea | 對照 QC/QuantStats 的報告指標缺口(benchmark 疊圖等) |
-| [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | idea | AI 友善介面缺口(--json / 狀態快照 / 唯讀 MCP) |
+| [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | adopted | AI 友善介面三部曲:--json / status 快照 / 唯讀 MCP,全部完成 |
 | [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | idea | FOMC/CPI 事件日盲點(先當研究題目) |
 | [research_notes/2026-07-18-alpaca-moc-opg-orders.md](research_notes/2026-07-18-alpaca-moc-opg-orders.md) | idea | MOC/OPG 集合競價單可對齊回測成交假設 |
 
@@ -134,7 +134,7 @@ quant info                              # 確認設定與已註冊策略
 
 > 沒啟用 venv 時的等效寫法:`& .\.venv\Scripts\python.exe -m quant.cli <指令>`
 
-### 1. 指令總表(25 個)
+### 1. 指令總表(26 個)
 
 **研究:**
 
@@ -185,6 +185,14 @@ quant info                              # 確認設定與已註冊策略
 契約:**stdout 只有一份 JSON 文件**(日誌走 stderr,可安心 `| jq`);頂層鍵 `command` + `data`
 (有過/不過語意的指令再加 `ok`,exit code 不變);數字保持數字(不會變字串);純 ASCII(cp950 安全)。
 例:`quant tca --json` 直接取 `data.avg_slippage_bps`,不必解析人類表格。
+
+**唯讀 MCP server**(`quant mcp`,AI agent 的原生介面):與 `--json` 共用同一層
+[src/quant/readapi.py](src/quant/readapi.py)(兩面永不漂移)。10 個工具:`get_status` /
+`get_health` / `get_live_decisions` / `get_orders` / `get_tca` / `list_experiments` /
+`get_experiment` / `list_research_notes` / `read_research_note` / `list_specs`。
+**鐵律:只有查詢,永無下單**(與「spec 不可含 execute」同族,AST 掃描測試釘死)。
+Claude Code 開本專案會自動偵測 [.mcp.json](.mcp.json)(首次需同意);其他 client 跑
+`quant mcp`(缺依賴先 `pip install -e ".[mcp]"`)。
 
 ### 2. 研究流程(找策略 → 驗證 → 留痕)
 

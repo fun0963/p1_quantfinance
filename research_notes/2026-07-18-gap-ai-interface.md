@@ -1,6 +1,6 @@
 ---
 title: tool gap scan: AI-friendly interface - MCP and json are table stakes
-status: idea
+status: adopted
 strategy: 
 symbols: 
 experiments: 
@@ -55,5 +55,10 @@ JSON/SQLite——資料早就 machine-readable,缺的只是**出口**。另:cp95
    **分區降級**——broker 掛掉只標記該區 error,絕不遮蔽本地狀態;`--offline` 跳過
    網路;lifecycle 只列 spec 不跑評估(保持秒回,verdicts 用 `quant lifecycle --all`);
    overall ok = 各檢查區 AND,exit code 一致。
-3. 唯讀 MCP server(把 --json 包起來;1、2 都好了,這是下一步)。
-4. 零成本順手項:Alpaca 官方 MCP 可直接掛進 Claude 做盤中查詢,不用自己寫。
+3. ✅ **唯讀 MCP server(2026-07-18 完成,三部曲收官→本筆記轉 adopted)**:
+   `quant.readapi` 共用查詢層(--json 與 MCP 同一來源,永不漂移)+ FastMCP stdio
+   10 工具 + `.mcp.json`(Claude Code 自動偵測)+ `quant mcp`。鐵律「只有查詢、
+   永無下單」用 AST 掃描測試釘死(禁止兩模組呼叫 submit/cancel/protect/sync 等);
+   另有真協定 in-memory 握手測試。
+4. 零成本順手項(仍開放):Alpaca 官方 MCP 可直接掛進 Claude 做盤中行情查詢,
+   與本系統 MCP 互補(他們管市場,我們管自家帳本與研究庫)。
