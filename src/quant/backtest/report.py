@@ -101,6 +101,21 @@ def _drawdown(equity: pd.Series) -> pd.Series:
     return (eq / eq.cummax() - 1.0) * 100.0
 
 
+def _rolling_sharpe(eq: pd.Series, window: int, ppy: float) -> pd.Series | None:
+    """Annualized rolling Sharpe over `window` RETURN observations.
+
+    Same convention as compute_metrics (mean/std, ddof=1, rf=0, *sqrt(ppy)), so
+    the last point of this line equals the number the lifecycle rules check on
+    the trailing window - the chart makes strategy decay visible ahead of a
+    retire-review. None when the series is too short to say anything.
+    """
+    rets = eq.astype(float).pct_change(fill_method=None).dropna()
+    if len(rets) < window + 5:
+        return None
+    rs = (rets.rolling(window).mean() / rets.rolling(window).std()) * np.sqrt(ppy)
+    return rs.dropna()
+
+
 def _metrics_table_html(metrics: dict) -> str:
     cells = []
     for key, label, suffix in _METRIC_ROWS:
@@ -122,19 +137,26 @@ def build_report(
     title: str | None = None,
     subtitle: str = "",
     data: pd.DataFrame | None = None,
+    timeframe: str = "1d",
+    rolling_window: int = 252,
 ) -> Path:
     """Write a self-contained HTML tear sheet for one backtest result.
 
     `metrics` is the dict to tabulate (typically res.metrics merged with
     trade_stats). Pass the OHLCV `data` the backtest ran on to also get the
     price+trade-marker panel and the buy-and-hold benchmark overlay/rows.
+    `timeframe` annualizes the rolling Sharpe; `rolling_window` is in bars
+    (default 252 = the lifecycle rules' default trailing window).
     Returns the written path.
     """
     from plotly.subplots import make_subplots
 
+    from quant.data.timeframes import get_timeframe
+
     eq = result.equity_curve.dropna()
     dd = _drawdown(eq)
     mret = monthly_returns(eq)
+    roll = _rolling_sharpe(eq, rolling_window, get_timeframe(timeframe).periods_per_year)
 
     bars = data if (data is not None and not data.empty) else None
     has_price = bars is not None
@@ -151,13 +173,20 @@ def build_report(
             metrics["excess_return_pct"] = round(
                 float(metrics["total_return_pct"]) - bench_ret, 2)
 
-    off = 1 if has_price else 0
-    titles = (("Price & trades",) if has_price else ()) + (
-        "Equity vs buy & hold" if has_price else "Equity curve",
-        "Drawdown (%)", "Monthly returns (%)")
-    heights = [0.34, 0.27, 0.14, 0.25] if has_price else [0.4, 0.25, 0.35]
-    fig = make_subplots(rows=3 + off, cols=1, vertical_spacing=0.07,
-                        row_heights=heights, subplot_titles=titles)
+    panels: list[str] = (["price"] if has_price else []) + ["equity"] \
+        + (["sharpe"] if roll is not None else []) + ["drawdown", "monthly"]
+    _titles = {
+        "price": "Price & trades",
+        "equity": "Equity vs buy & hold" if has_price else "Equity curve",
+        "sharpe": f"Rolling Sharpe ({rolling_window}-bar window, annualized)",
+        "drawdown": "Drawdown (%)", "monthly": "Monthly returns (%)",
+    }
+    _hts = {"price": 0.30, "equity": 0.24, "sharpe": 0.14, "drawdown": 0.12, "monthly": 0.20}
+    hsum = sum(_hts[p] for p in panels)
+    row = {p: i + 1 for i, p in enumerate(panels)}
+    fig = make_subplots(rows=len(panels), cols=1, vertical_spacing=0.06,
+                        row_heights=[_hts[p] / hsum for p in panels],
+                        subplot_titles=[_titles[p] for p in panels])
 
     if bars is not None:
         fig.add_candlestick(x=bars.index, open=bars["open"], high=bars["high"],
@@ -187,21 +216,27 @@ def build_report(
         fig.update_layout(xaxis_rangeslider_visible=False)
 
     fig.add_scatter(x=eq.index, y=eq.values, mode="lines", name="strategy",
-                    line=dict(color="#1f77b4", width=2), row=1 + off, col=1)
+                    line=dict(color="#1f77b4", width=2), row=row["equity"], col=1)
     if bench is not None:
         fig.add_scatter(x=bench.index, y=bench.values, mode="lines", name="buy & hold",
-                        line=dict(color="#888", width=1.5, dash="dot"), row=1 + off, col=1)
+                        line=dict(color="#888", width=1.5, dash="dot"), row=row["equity"], col=1)
+    if roll is not None:
+        fig.add_scatter(x=roll.index, y=roll.values, mode="lines", name="rolling sharpe",
+                        line=dict(color="#9467bd", width=1.5), showlegend=False,
+                        row=row["sharpe"], col=1)
+        fig.add_hline(y=0.0, line=dict(color="#bbb", width=1, dash="dash"),
+                      row=row["sharpe"], col=1)
     fig.add_scatter(x=dd.index, y=dd.values, mode="lines", fill="tozeroy",
-                    name="drawdown", showlegend=False, row=2 + off, col=1)
+                    name="drawdown", showlegend=False, row=row["drawdown"], col=1)
     if not mret.empty:
         z = mret.to_numpy(dtype=float)
         labels = np.where(np.isnan(z), "", np.round(z, 1).astype(str))  # blank empty months
         fig.add_heatmap(
             z=z, x=_MONTHS, y=[str(y) for y in mret.index],
             colorscale="RdYlGn", zmid=0, text=labels, texttemplate="%{text}",
-            colorbar=dict(title="%"), row=3 + off, col=1,
+            colorbar=dict(title="%"), row=row["monthly"], col=1,
         )
-    fig.update_layout(template="plotly_white", height=1250 if has_price else 900,
+    fig.update_layout(template="plotly_white", height=280 * len(panels) + 60,
                       showlegend=has_price,
                       legend=dict(orientation="h", yanchor="bottom", y=1.015, x=0),
                       title=title or f"{strategy} on {symbol}")

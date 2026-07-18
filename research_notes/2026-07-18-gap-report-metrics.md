@@ -39,8 +39,11 @@ recovery factor、Kelly criterion、tail ratio、common sense ratio、skew/kurto
    Excess vs benchmark 兩列。首次實測立刻見效:SPY momentum 總報酬 116.8% vs
    B&H 151.0% → 超額 **-34.2%**(2020 起、5bps 成本)——策略價值在淺回撤
    (-14.6%)不在絕對報酬,以前的 tear sheet 看不見這件事。
-2. **rolling Sharpe 時序圖**:lifecycle 內部已算 trailing sharpe 卻沒畫出來;
-   畫出來就能「看見」策略衰退,退場討論會具體很多。
+2. ✅ **rolling Sharpe 時序圖(2026-07-18 完成)**:tear sheet 新面板,252-bar 窗
+   (=lifecycle 預設 trailing 窗)、依 timeframe 註冊表年化、零線參考;**最後一點
+   = lifecycle 檢查的那個數字**(同 compute_metrics 慣例,收斂一致性有測試釘住)。
+   實測 SPY momentum:現值 1.26、歷史 -1.26~2.88——衰退趨勢與距退場線的餘裕
+   直接看得見。短序列(< 窗+5)自動省略面板。
 3. **profit factor + payoff ratio**:交易員通用語言,計算成本趨近零。
 4. **turnover(年化換手)**:直接接上成本預算檢查(walkthrough 階段 1.3 的心算
    可以變成報告裡的實數)。

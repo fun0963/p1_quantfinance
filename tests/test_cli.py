@@ -267,8 +267,7 @@ def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     import quant.backtest.report as rep
     captured = {}
 
-    def fake_build(res, *, symbol, strategy, metrics, out_path, title=None, subtitle="",
-                   data=None):
+    def fake_build(res, *, symbol, strategy, metrics, out_path, data=None, **kw):
         captured.update(symbol=symbol, metrics=metrics, data=data)
         p = tmp_path / "r.html"
         p.write_text("x", encoding="utf-8")

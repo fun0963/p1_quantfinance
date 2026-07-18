@@ -77,6 +77,32 @@ def test_trade_marks_backtrader_schema_falls_back_to_close(tmp_path):
     assert float(exits["pnl"].iloc[0]) == 9.5                           # net-of-commission col wins
 
 
+def test_rolling_sharpe_panel_present_and_matches_lifecycle_convention(tmp_path):
+    """The last rolling point must equal compute_metrics' Sharpe on the same
+    trailing slice - the chart and the lifecycle rules speak the same number."""
+    from quant.backtest.report import _rolling_sharpe
+
+    res = _result(n=400)
+    eq = res.equity_curve
+    roll = _rolling_sharpe(eq, 252, 252.0)
+    expected = compute_metrics(eq.iloc[-253:])["sharpe"]     # 252 return obs
+    assert roll is not None
+    assert abs(float(roll.iloc[-1]) - float(expected)) < 0.01
+
+    out = build_report(res, symbol="SPY", strategy="momentum", metrics=res.metrics,
+                       out_path=tmp_path / "r.html")
+    assert "Rolling Sharpe (252-bar window, annualized)" in out.read_text(encoding="utf-8")
+
+
+def test_rolling_sharpe_panel_omitted_on_short_series(tmp_path):
+    res = _result(n=100)                                     # < window + margin
+    out = build_report(res, symbol="SPY", strategy="momentum", metrics=res.metrics,
+                       out_path=tmp_path / "r.html")
+    html = out.read_text(encoding="utf-8")
+    assert "Rolling Sharpe" not in html
+    assert "Equity curve" in html                            # report still builds
+
+
 def test_benchmark_rows_do_not_mutate_caller_metrics(tmp_path):
     res = _result()
     data = _bars(res.equity_curve.index)

@@ -72,7 +72,7 @@ p1_quantfinance/
 | `src/quant/data/` | 載入與守門 | `loaders.py`(`load_bars` 快取優先下載;`fetch_bars` 各進入點共用)、`quality.py`(NaN/跳空/OHLC 檢查)、`integrity.py`(**偵測歷史被回溯改寫**,除權息陷阱) |
 | `src/quant/strategies/` | 策略=純訊號邏輯,引擎無關;加新策略只要一個類別+註冊一行 | `base.py`(`BaseStrategy` 介面)、`ma_cross.py`、`momentum.py`、`registry.py`、`spec.py`(**讀 `configs/strategies.json` 的具名規格**) |
 | `src/quant/risk/` | 下單前的三道防線 | `base.py`(`RiskManager` 部位 sizing)、`gate.py`(`RiskGate`:部位/日虧上限、kill-switch;**降險賣單永遠放行**)、`bracket.py`(停損停利) |
-| `src/quant/backtest/` | 雙引擎回測與研究工具 | `base.py`(`BacktestEngine` 介面)、`vectorbt_engine.py`(向量化,快)、`backtrader_engine.py`(事件驅動,擬真)、`costs.py`(**成本/滑價模型,可用實盤 TCA 校準**)、`metrics.py`(Sharpe/Sortino/Calmar/月報酬…)、`optimize.py`(參數掃描)、`walkforward.py`(樣本外驗證)、`plots.py`、`report.py`(**一鍵 HTML tear sheet:K 線+進出點標記、權益疊 buy-and-hold、超額報酬列**) |
+| `src/quant/backtest/` | 雙引擎回測與研究工具 | `base.py`(`BacktestEngine` 介面)、`vectorbt_engine.py`(向量化,快)、`backtrader_engine.py`(事件驅動,擬真)、`costs.py`(**成本/滑價模型,可用實盤 TCA 校準**)、`metrics.py`(Sharpe/Sortino/Calmar/月報酬…)、`optimize.py`(參數掃描)、`walkforward.py`(樣本外驗證)、`plots.py`、`report.py`(**一鍵 HTML tear sheet:K 線+進出點標記、權益疊 buy-and-hold+超額報酬列、rolling Sharpe(與 lifecycle 同窗同法)**) |
 | `src/quant/portfolio/` | 多策略資金配置、相關矩陣、分散化效益 | `portfolio.py`(`run_portfolio`,引擎可注入) |
 | `src/quant/execution/` | 下單與實盤生命週期 | `base.py`(`Broker` 介面)、`paper_broker.py`(離線模擬)、`alpaca_broker.py`(paper 端點+bracket/OCO)、`session.py`(紙上交易)、`live_runner.py`(單根 K 決策+新鮮度閘)、`scheduler.py`(APScheduler 排程)、`journal.py`(SQLite 交易紀錄:sessions/fills/orders/heartbeats) |
 | `src/quant/ops/` | 無人值守的營運後盾(全部 best-effort,絕不阻斷交易) | `notify.py`(Telegram/log 告警)、`reconcile.py`(帳 vs 紀錄對帳)、`oms.py`(訂單狀態機+稽核)、`tca.py`(滑價分析)、`health.py`(heartbeat 監控)、`drift.py`(回測 vs 實盤偏差)、`report.py`(每日報告) |
