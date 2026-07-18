@@ -204,7 +204,7 @@ quant journal --live                                           # 看每次 live 
 quant schedule --spec spy_momentum --spec qqq_ma_cross --broker alpaca --run-now
 # 一個程序排多個策略;每個 spec 的參數與風控都來自版控的規格檔
 ```
-長期推薦用 **Windows 工作排程器**(重開機也活),步驟見 [docs/SCHEDULING.md](docs/SCHEDULING.md)。
+**目前採用「一鍵啟停」模式**:雙擊 [`scripts/trading.cmd`](scripts/trading.cmd) 啟動(`stop`/`status` 停止/查看;防重複啟動;日誌在 `logs/`);機器不定時關機所以刻意不常駐,重開機後想交易再點一次。日後要常駐再用 **Windows 工作排程器**,步驟見 [docs/SCHEDULING.md](docs/SCHEDULING.md)。
 排程每次觸發都會走:假日略過 → OMS 同步 → 對帳(不符即停+告警)→ 決策 → 紀錄 + heartbeat。
 
 ### 6. 多策略組合

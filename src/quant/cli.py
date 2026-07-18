@@ -226,8 +226,8 @@ def schedule(
 ) -> None:
     """Run `live` automatically on a cron schedule (blocking process). Dry-run by default.
 
-    For reboot-survival, prefer Windows Task Scheduler calling `quant live --execute`
-    - see docs/SCHEDULING.md. Ctrl+C to stop this loop.
+    One-click start/stop/status wrapper: scripts/trading.cmd (does NOT survive
+    reboot - by choice). For reboot-survival see docs/SCHEDULING.md. Ctrl+C stops.
     """
     from quant.execution.scheduler import LiveConfig, run_schedule
 

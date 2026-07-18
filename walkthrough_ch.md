@@ -89,7 +89,7 @@
 | 6.1 | 首單人工確認 | `quant live --spec 我的spec --broker alpaca --execute` | 下單後 `quant oms`:訂單 FILLED、價格合理 |
 | 6.2 | 對帳 | `quant reconcile --broker alpaca` | **clean**;WARN 無保護單就補 `quant protect` |
 | 6.3 | 排程化 | 日線:`quant schedule --spec X --broker alpaca --execute`;盤中:加 `--every 5min --fraction ...` | 啟動 banner 正確;`quant health` 出現 scheduler heartbeat |
-| 6.4 | 持久化(⬜ 待辦) | Windows 工作排程器 + `scripts/daily_live.ps1`(docs/SCHEDULING.md) | 重開機後排程自動恢復(目前背景程序重開機即失) |
+| 6.4 | 一鍵啟停(✅ 已做) | 雙擊 `scripts\trading.cmd`(= start);`trading.cmd stop` / `status` | OK 兩行 + PID + log 路徑;防重複啟動(SKIP);**不會在重開機後自動恢復——每次開機想交易就再點一次**(刻意選擇:機器不定時關機,先不常駐;要常駐再走 docs/SCHEDULING.md 的工作排程器) |
 
 **鐵律**:同一帳戶**一個 symbol 只給一個策略**(兩策略共用 SPY 會互賣對方部位);每次觸發自動走:開市檢查 → OMS 同步 → 對帳(不符即停+告警)→ 新鮮度閘 → 風控 → 下單。
 
