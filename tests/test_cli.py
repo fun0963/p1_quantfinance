@@ -267,8 +267,9 @@ def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     import quant.backtest.report as rep
     captured = {}
 
-    def fake_build(res, *, symbol, strategy, metrics, out_path, title=None, subtitle=""):
-        captured.update(symbol=symbol, metrics=metrics)
+    def fake_build(res, *, symbol, strategy, metrics, out_path, title=None, subtitle="",
+                   data=None):
+        captured.update(symbol=symbol, metrics=metrics, data=data)
         p = tmp_path / "r.html"
         p.write_text("x", encoding="utf-8")
         return p
@@ -279,6 +280,7 @@ def test_backtest_report_flag_invokes_builder(monkeypatch, tmp_path):
     assert r.exit_code == 0, r.output
     assert "Report ->" in r.output
     assert captured["symbol"] == "SPY" and "sharpe" in captured["metrics"]
+    assert captured["data"] is not None and "close" in captured["data"].columns
 
 
 def test_backtest_logs_experiment_and_experiments_command(monkeypatch, tmp_path):

@@ -654,7 +654,7 @@ def backtest(
         name = "vectorbt" if "vectorbt" in results else next(iter(results))
         res = results[name]
         full = {**res.metrics, **trade_stats(res.trades)}
-        path = build_report(res, symbol=symbol, strategy=strategy, metrics=full,
+        path = build_report(res, symbol=symbol, strategy=strategy, metrics=full, data=data,
                             out_path=f"reports/report_{symbol}_{strategy}.html",
                             title=f"{strat.name} on {symbol}",
                             subtitle=f"{name} · {data.index[0].date()} -> {data.index[-1].date()} · {cost.summary()}")

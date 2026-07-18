@@ -36,10 +36,12 @@ updated: 2026-07-18
    (這條對我們影響小——寫碼的人是 AI。)
 10. 社群 15 萬腳本 / ideas feed / Store、內建 paper trading、圖上拖拉下單改 bracket。
 
-## 值得做的候選(依 CP 值排序,未承諾)
+## 值得做的候選(依 CP 值排序)
 
-- A. **tear sheet 加「K 線 + 進出場標記」圖**:資料全在(bars + trades),plotly
-  candlestick + markers,成本低、是驗證策略行為最缺的一塊。
+- A. ✅ **tear sheet 加「K 線 + 進出場標記」圖(2026-07-18 完成)**:candlestick +
+  entry/exit 三角標記(兩引擎 trade 表都吃:vbt records_readable 與 backtrader log,
+  後者無 exit price 用 bar close 補)。實測 SPY momentum:1643 根 K + 16 進 16 出,
+  hover 帶 PnL。同批完成 benchmark 疊圖(見 gap-report-metrics 筆記)。
 - B. report 印**資料來源與最後 bar 時間戳**(透明度,幾行的事)。
 - C. 市場條件告警:scheduler 已有 IntervalTrigger + Telegram,加一種「條件告警」
   任務(如 close crosses MA)——屬新功能面,想清楚再做。

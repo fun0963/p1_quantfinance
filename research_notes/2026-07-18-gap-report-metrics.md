@@ -34,8 +34,11 @@ recovery factor、Kelly criterion、tail ratio、common sense ratio、skew/kurto
 
 ## 缺口排序(對單人 ETF 擇時真正有用的)
 
-1. **benchmark 疊圖(vs buy-and-hold)**:每份 tear sheet 該有的第一常識;我們的
-   walkforward 有 efficiency 概念,但 tear sheet 沒有同圖疊 SPY B&H。
+1. ✅ **benchmark 疊圖(2026-07-18 完成)**:tear sheet 權益圖疊**自身標的** buy-and-hold
+   (單標的擇時的誠實 null hypothesis;同起始資金),指標表加 Benchmark 與
+   Excess vs benchmark 兩列。首次實測立刻見效:SPY momentum 總報酬 116.8% vs
+   B&H 151.0% → 超額 **-34.2%**(2020 起、5bps 成本)——策略價值在淺回撤
+   (-14.6%)不在絕對報酬,以前的 tear sheet 看不見這件事。
 2. **rolling Sharpe 時序圖**:lifecycle 內部已算 trailing sharpe 卻沒畫出來;
    畫出來就能「看見」策略衰退,退場討論會具體很多。
 3. **profit factor + payoff ratio**:交易員通用語言,計算成本趨近零。
