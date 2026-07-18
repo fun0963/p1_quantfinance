@@ -14,7 +14,18 @@ from typer.testing import CliRunner
 import quant.cli as cli
 from quant.cli import _coerce, _parse_grid, _parse_legs, _parse_params
 
-runner = CliRunner()
+# rich force-enables ANSI color when it detects CI (GITHUB_ACTIONS etc.), which
+# breaks plain-substring assertions on typer error output: the message survives
+# but gets interleaved with escape codes inside a rich panel. Neutralize every
+# color trigger so output is identical on a dev box and on any CI runner.
+# (None deletes the variable for the invoke; NO_COLOR=1 covers future detectors.)
+runner = CliRunner(env={
+    "NO_COLOR": "1",
+    "TERM": "dumb",
+    "FORCE_COLOR": None,
+    "GITHUB_ACTIONS": None,
+    "CI": None,
+})
 
 
 def _synthetic(n=300, seed=5):
