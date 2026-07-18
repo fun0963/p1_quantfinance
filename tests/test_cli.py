@@ -3,6 +3,7 @@ typer's CliRunner. `info` is fully offline; `backtest` is exercised end-to-end
 with the data loader stubbed to a synthetic frame (no network, no cache)."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -19,13 +20,20 @@ from quant.cli import _coerce, _parse_grid, _parse_legs, _parse_params
 # but gets interleaved with escape codes inside a rich panel. Neutralize every
 # color trigger so output is identical on a dev box and on any CI runner.
 # (None deletes the variable for the invoke; NO_COLOR=1 covers future detectors.)
-runner = CliRunner(env={
+_RUNNER_ENV = {
     "NO_COLOR": "1",
     "TERM": "dumb",
     "FORCE_COLOR": None,
     "GITHUB_ACTIONS": None,
     "CI": None,
-})
+}
+# r.output must be STDOUT ONLY: the --json contract is "one JSON document on
+# stdout" while loguru chatter legitimately goes to stderr. Old click mixes
+# them unless told not to; click >= 8.2 dropped the kwarg and separates always.
+try:
+    runner = CliRunner(env=_RUNNER_ENV, mix_stderr=False)  # type: ignore[call-arg]
+except TypeError:
+    runner = CliRunner(env=_RUNNER_ENV)
 
 
 def _synthetic(n=300, seed=5):
@@ -290,3 +298,147 @@ def test_backtest_logs_experiment_and_experiments_command(monkeypatch, tmp_path)
     r2 = runner.invoke(cli.app, ["experiments"])
     assert r2.exit_code == 0, r2.output
     assert "ma_cross" in r2.output and "SPY" in r2.output
+
+
+# --- --json machine-readable output ------------------------------------------
+# The contract (what AI agents / scripts rely on): exactly ONE parseable JSON
+# document on stdout, top-level `command` + `data` (+ `ok` for pass/fail
+# commands, whose exit codes are unchanged), and numbers stay numbers.
+
+def _json_doc(r):
+    # r.stdout, NOT r.output: loguru legitimately logs to stderr and new click's
+    # `output` interleaves both streams. The contract is stdout purity.
+    doc = json.loads(r.stdout)          # raises if any human chatter leaked
+    assert "command" in doc and "data" in doc
+    return doc
+
+
+def _tmp_journal(monkeypatch, tmp_path):
+    import quant.execution as ex
+    real = ex.TradeJournal
+    monkeypatch.setattr(ex, "TradeJournal", lambda *a, **k: real(tmp_path / "j.db"))
+
+
+def test_json_info():
+    r = runner.invoke(cli.app, ["info", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    assert doc["command"] == "info"
+    assert "ma_cross" in doc["data"]["strategies"]
+    assert doc["data"]["alpaca_key"] in ("set", "MISSING")   # never the key itself
+
+
+def test_json_backtest_metrics_stay_numbers(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["backtest", "SPY", "--strategy", "ma_cross",
+                                "--engine", "vectorbt", "--slippage-bps", "20",
+                                "--no-log", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    m = doc["data"]["engines"]["vectorbt"]
+    assert isinstance(m["sharpe"], (int, float))             # numpy scalar -> number
+    assert isinstance(m["num_trades"], int)
+    assert doc["data"]["cost"]["slippage_bps"] == 20.0
+
+
+def test_json_live_dry_run(monkeypatch):
+    import quant.execution.scheduler as sched
+
+    def fake(cfg, *, dry_run=True, **kw):
+        return SimpleNamespace(ts="2024-01-02", price=100.0, position_before=0.0,
+                               target_state="long", action="buy", qty=10.0,
+                               reason="test", blocked=None, order_id=None,
+                               symbol=cfg.symbol, dry_run=dry_run)
+
+    monkeypatch.setattr(sched, "live_and_journal", fake)
+    r = runner.invoke(cli.app, ["live", "--spec", "spy_momentum",
+                                "--broker", "paper", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    assert doc["data"]["action"] == "buy" and doc["data"]["dry_run"] is True
+    assert doc["data"]["spec"] == "spy_momentum"
+
+
+def test_json_journal_modes_on_empty_db(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["journal", "--json"])
+    assert r.exit_code == 0, r.output
+    d = _json_doc(r)["data"]
+    assert d["mode"] == "sessions" and d["records"] == []
+    r2 = runner.invoke(cli.app, ["journal", "--live", "--json"])
+    d2 = _json_doc(r2)["data"]
+    assert d2["mode"] == "live" and d2["records"] == []
+
+
+def test_json_oms_and_tca_on_empty_journal(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["oms", "--json"])
+    assert r.exit_code == 0, r.output
+    assert _json_doc(r)["data"]["records"] == []
+    r2 = runner.invoke(cli.app, ["tca", "--json"])
+    assert r2.exit_code == 0, r2.output
+    d2 = _json_doc(r2)["data"]
+    assert d2["n_filled"] == 0 and d2["per_order"] == []
+
+
+def test_json_health_exit_mirrors_ok(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["health", "--json"])
+    doc = _json_doc(r)
+    assert isinstance(doc["ok"], bool) and isinstance(doc["data"]["components"], list)
+    assert r.exit_code == (0 if doc["ok"] else 1)
+
+
+def test_json_reconcile_paper_broker_clean(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["reconcile", "--broker", "paper", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    assert doc["ok"] is True and doc["data"]["issues"] == []
+
+
+def test_json_lifecycle_all(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic(n=400))
+    r = runner.invoke(cli.app, ["lifecycle", "--all", "--json"])
+    doc = _json_doc(r)
+    names = {s["name"] for s in doc["data"]["specs"]}
+    assert {"spy_momentum", "qqq_ma_cross"} <= names
+    assert all(s["verdict"] in ("hold", "retire-review") for s in doc["data"]["specs"])
+    assert r.exit_code == (0 if doc["ok"] else 1)
+
+
+def test_json_check(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic())
+    r = runner.invoke(cli.app, ["check", "SPY", "--json"])
+    doc = _json_doc(r)
+    assert doc["ok"] is True and doc["data"]["n_bars"] == 300
+    assert r.exit_code == 0
+
+
+def test_json_experiments_empty(monkeypatch, tmp_path):
+    import quant.research as research
+    real = research.ExperimentStore
+    monkeypatch.setattr(research, "ExperimentStore", lambda *a, **k: real(db_path=tmp_path / "e.db"))
+    r = runner.invoke(cli.app, ["experiments", "--json"])
+    assert r.exit_code == 0, r.output
+    d = _json_doc(r)["data"]
+    assert d["mode"] == "list" and d["records"] == []
+
+
+def test_json_note_list(tmp_path):
+    runner.invoke(cli.app, ["note", "new", "an idea", "--dir", str(tmp_path)])
+    r = runner.invoke(cli.app, ["note", "list", "--dir", str(tmp_path), "--json"])
+    doc = _json_doc(r)
+    assert doc["command"] == "note.list"
+    assert doc["data"]["records"][0]["title"] == "an idea"
+    assert doc["data"]["records"][0]["status"] == "idea"
+
+
+def test_json_walkforward(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _synthetic(n=300))
+    r = runner.invoke(cli.app, ["walkforward", "SPY", "--strategy", "ma_cross",
+                                "--train-bars", "120", "--test-bars", "60", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    assert "wf_efficiency" in doc["data"]["summary"]
+    assert doc["data"]["folds"] and doc["data"]["verdict"]

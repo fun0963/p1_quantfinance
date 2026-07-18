@@ -178,6 +178,13 @@ quant info                              # 確認設定與已註冊策略
 
 共用選項:`--strategy`、`--params "k=v,k=v"`、`--start YYYY-MM-DD`、`--timeframe 1d`。
 
+**機器可讀輸出 `--json`**(給腳本 / AI agent 用,15 個查詢類指令支援):
+`info`、`account`、`backtest`、`walkforward`、`check`、`experiments`、`lifecycle`、`note list`、
+`live`、`journal`、`oms`、`tca`、`health`、`reconcile`、`drift`。
+契約:**stdout 只有一份 JSON 文件**(日誌走 stderr,可安心 `| jq`);頂層鍵 `command` + `data`
+(有過/不過語意的指令再加 `ok`,exit code 不變);數字保持數字(不會變字串);純 ASCII(cp950 安全)。
+例:`quant tca --json` 直接取 `data.avg_slippage_bps`,不必解析人類表格。
+
 ### 2. 研究流程(找策略 → 驗證 → 留痕)
 
 ```powershell

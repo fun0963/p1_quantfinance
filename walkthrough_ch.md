@@ -105,6 +105,8 @@
 | 7.4 | 儀表盤總覽 | `quant web` → http://127.0.0.1:8000 | Backtest/Portfolio/Journal 分頁核對數據 |
 | 7.5 | 告警通道 | `quant alert-test`(設定後跑一次) | Telegram 有收到;CRITICAL 要能吵醒你 |
 
+**自動化提示**:查詢類指令都支援 `--json`(stdout 只有一份 JSON、日誌走 stderr、exit code 不變)——寫腳本或讓 AI 代查時用它,別解析人類表格。
+
 ---
 
 ## 階段 8:量測 → 校準 → 檢討(每週/每月)

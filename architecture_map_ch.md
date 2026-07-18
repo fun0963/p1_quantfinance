@@ -175,6 +175,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 5. **接下來(依優先序)**:
    - ✅ **一鍵啟停工具(2026-07-18,取代 Task Scheduler)**:`scripts/trading.cmd`(雙擊=start;`stop`/`status`;防重複啟動、`-u` 即時日誌到 logs/)。**刻意不做常駐**:機器不定時關機,使用者選擇「想跑再點一下」模式;重開機後要交易就再點一次。日後要常駐再走 docs/SCHEDULING.md 的工作排程器。
    - ⬜ **開盤日記得啟動**:每個交易日開機後雙擊 `scripts\trading.cmd`(或叫 Claude 跑 `trading.ps1 start`),用 `quant health` 驗 heartbeat。
+   - ✅ **CLI `--json` 機器可讀輸出(2026-07-18)**:15 個查詢類指令(info/account/backtest/walkforward/check/experiments/lifecycle/note list/live/journal/oms/tca/health/reconcile/drift)。契約:stdout 僅一份 JSON(日誌在 stderr)、頂層 `command`+`data`(+`ok`)、exit code 不變、numpy 數字不變字串、ensure_ascii。動機與後續(status 快照、唯讀 MCP)見 research_notes/2026-07-18-gap-ai-interface.md。
    - ⬜ **累積 TCA 樣本**:探針多跑幾個交易日、換 SPY 也量,樣本夠了再回頭定案 `--calibrate` 的使用準則。
    - ⬜ **走查驗收**:照 [walkthrough_ch.md](walkthrough_ch.md) 從發想到檢討完整走一輪(使用者主導)。
    - ⬜ 第二支正式策略(用走查流程孵化);(遠期)存活者偏差解鎖後才做掃描器。

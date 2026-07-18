@@ -75,6 +75,54 @@ def _parse_legs(spec: str) -> list:
     return out
 
 
+# --- machine-readable output (--json) ----------------------------------------
+_JSON_HELP = "machine-readable JSON on stdout (one document; for scripts/AI agents)"
+
+
+def _df_records(df) -> list:
+    """DataFrame -> plain-JSON records (NaN -> null, timestamps -> ISO strings)."""
+    import json
+
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+def _json_default(o):
+    """Serialize what stdlib json can't: numpy scalars stay NUMBERS (an agent
+    doing math on "sharpe" must not get a string); everything else -> str
+    (Timestamps, Paths, dates, enums)."""
+    import numpy as np
+
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)
+
+
+def _emit_json(command: str, data, ok: bool | None = None) -> None:
+    """The --json contract: exactly ONE JSON document on stdout, nothing else.
+
+    Top-level keys: `command`, `data`, plus `ok` for commands with pass/fail
+    semantics (their exit codes are unchanged). ensure_ascii keeps cp950
+    consoles safe.
+    """
+    import json
+
+    doc: dict = {"command": command}
+    if ok is not None:
+        doc["ok"] = ok
+    doc["data"] = data
+    typer.echo(json.dumps(doc, ensure_ascii=True, default=_json_default))
+
+
+def _null_echo(*_args, **_kwargs) -> None:
+    """typer.echo stand-in for --json mode: human chatter must not pollute stdout."""
+
+
 def _load(symbol: str, start: str, timeframe: str, no_cache: bool = False):
     from quant.data.loaders import fetch_bars
 
@@ -131,11 +179,21 @@ def _init() -> None:
 
 
 @app.command()
-def info() -> None:
+def info(as_json: bool = typer.Option(False, "--json", help=_JSON_HELP)) -> None:
     """Show resolved settings and registered strategies."""
     from quant.strategies.registry import REGISTRY, available
 
     s = get_settings()
+    if as_json:
+        _emit_json("info", {
+            "env": s.env,
+            "data_dir": str(s.data_dir),
+            "log_dir": str(s.log_dir),
+            "alpaca_paper": s.alpaca_paper,
+            "alpaca_key": "set" if s.alpaca_api_key else "MISSING",  # never the key itself
+            "strategies": {name: REGISTRY[name].default_grid() for name in available()},
+        })
+        return
     typer.echo(f"env         : {s.env}")
     typer.echo(f"data_dir    : {s.data_dir}")
     typer.echo(f"log_dir     : {s.log_dir}")
@@ -165,6 +223,7 @@ def live(
     take_profit: float = typer.Option(0, help="bracket take %% above entry, e.g. 0.15 (needs --stop-loss)"),
     execute: bool = typer.Option(False, "--execute",
                                  help="ACTUALLY submit the order (default: dry-run, no order)"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Evaluate the LATEST bar and reconcile the position (signal->risk gate->broker). Dry-run by default."""
     from quant.execution.scheduler import LiveConfig, live_and_journal
@@ -179,6 +238,17 @@ def live(
                          fraction=fraction, max_position_notional=max_position_notional,
                          max_daily_loss=max_daily_loss, stop_loss=stop_loss, take_profit=take_profit)
     dec = live_and_journal(cfg, dry_run=not execute)
+
+    if as_json:
+        _emit_json("live", {
+            "symbol": cfg.symbol, "strategy": cfg.strategy, "spec": spec or None,
+            "broker": broker, "mode": mode, "dry_run": not execute,
+            "bar_ts": dec.ts, "price": dec.price,
+            "position_before": dec.position_before, "target_state": dec.target_state,
+            "action": dec.action, "qty": dec.qty, "reason": dec.reason,
+            "blocked": dec.blocked, "order_id": dec.order_id,
+        })
+        return
 
     label = "EXECUTE" if execute else "DRY-RUN"
     typer.echo(f"\n[LIVE {label}] {cfg.strategy} on {cfg.symbol}  (broker={broker}, mode={mode}"
@@ -295,7 +365,7 @@ def protect(
 
 
 @app.command()
-def account() -> None:
+def account(as_json: bool = typer.Option(False, "--json", help=_JSON_HELP)) -> None:
     """Verify the Alpaca paper connection: prints account cash/equity & positions (read-only)."""
     from quant.execution.alpaca_broker import AlpacaBroker
 
@@ -304,10 +374,21 @@ def account() -> None:
         summary = broker.account_summary()
         positions = broker.get_positions()
     except Exception as exc:
+        if as_json:
+            _emit_json("account", {"error": f"{type(exc).__name__}: {exc}"}, ok=False)
+            raise typer.Exit(code=1) from None
         typer.echo(f"Alpaca connection FAILED: {type(exc).__name__}: {exc}")
         typer.echo("  - check ALPACA_API_KEY / ALPACA_SECRET_KEY in .env (paper keys)")
         typer.echo("  - check ALPACA_PAPER=true")
         raise typer.Exit(code=1)
+
+    if as_json:
+        _emit_json("account", {
+            "summary": summary,
+            "positions": [{"symbol": p.symbol, "qty": p.qty, "avg_price": p.avg_price}
+                          for p in positions],
+        }, ok=True)
+        return
 
     typer.echo("\nAlpaca paper account - connected OK")
     for k, v in summary.items():
@@ -348,6 +429,7 @@ def journal(
     session: int = typer.Option(0, help="show fills/blocks for this session id (0 = list all)"),
     live: bool = typer.Option(False, "--live", help="show the live-runner decision log instead"),
     limit: int = typer.Option(20, help="how many recent rows to list"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Review the SQLite trade journal: paper sessions, a session's detail, or live decisions."""
     from quant.execution import TradeJournal
@@ -355,18 +437,31 @@ def journal(
     with TradeJournal() as tj:
         if live:
             rows = tj.live_log(limit=limit)
+            if as_json:
+                _emit_json("journal", {"mode": "live", "db": str(tj.path),
+                                       "records": _df_records(rows)})
+                return
             typer.echo(f"\nRecent live decisions (newest first), db: {tj.path}\n")
             typer.echo(rows.to_string(index=False) if not rows.empty
                        else "no live decisions yet - run `quant live ...`")
         elif session > 0:
             fills = tj.fills(session)
             blocks = tj.blocked(session)
+            if as_json:
+                _emit_json("journal", {"mode": "session", "session": session,
+                                       "db": str(tj.path), "fills": _df_records(fills),
+                                       "blocked": _df_records(blocks)})
+                return
             typer.echo(f"\n=== session #{session} - {len(fills)} fills ===")
             typer.echo(fills.to_string(index=False) if not fills.empty else "(no fills)")
             typer.echo(f"\n=== {len(blocks)} blocked orders ===")
             typer.echo(blocks.to_string(index=False) if not blocks.empty else "(none)")
         else:
             sessions = tj.sessions(limit=limit)
+            if as_json:
+                _emit_json("journal", {"mode": "sessions", "db": str(tj.path),
+                                       "records": _df_records(sessions)})
+                return
             if sessions.empty:
                 typer.echo("journal is empty - run `quant paper ...` first")
             else:
@@ -379,12 +474,20 @@ def check(
     symbol: str,
     start: str = typer.Option("2020-01-01", help="YYYY-MM-DD"),
     timeframe: str = typer.Option("1d"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Run data-quality checks on a symbol's bars (NaNs, gaps, OHLC, splits)."""
     from quant.data.quality import check_bars
 
     data = _load(symbol, start, timeframe)
     report = check_bars(data)
+    if as_json:
+        _emit_json("check", {
+            "symbol": symbol, "timeframe": timeframe,
+            "start": str(data.index[0].date()), "end": str(data.index[-1].date()),
+            "n_bars": report.n_bars, "issues": report.issues, "warnings": report.warnings,
+        }, ok=report.ok)
+        raise typer.Exit(code=0 if report.ok else 1)
     typer.echo(f"\n{symbol}  ({data.index[0].date()} -> {data.index[-1].date()})")
     typer.echo(str(report))
     raise typer.Exit(code=0 if report.ok else 1)
@@ -412,12 +515,18 @@ def backtest(
     log_experiment: bool = typer.Option(True, "--log/--no-log",
                                         help="record this run to the experiment store"),
     note: str = typer.Option("", help="free-text note attached to the logged experiment"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Backtest a strategy and compare engines side by side."""
     from quant.backtest.backtrader_engine import BacktraderEngine
     from quant.backtest.costs import CostModel
     from quant.backtest.vectorbt_engine import VectorBTEngine
     from quant.strategies.registry import get_strategy_cls
+
+    # --json: same computation and side effects (experiment log / plot / report),
+    # human chatter muted, one JSON document at the end.
+    echo = _null_echo if as_json else typer.echo
+    payload: dict = {}
 
     parsed = _parse_params(params)
     if spec:
@@ -448,17 +557,26 @@ def backtest(
     results = {n: cls(cash=cash, fees=cost.fees, slippage=cost.slippage).run(strat, data, timeframe=timeframe)
                for n, cls in chosen.items()}
 
-    typer.echo(f"\n{strat}  on  {symbol}  "
-               f"({len(data)} bars, {data.index[0].date()} -> {data.index[-1].date()})")
-    typer.echo(cost.summary())
+    payload = {
+        "symbol": symbol, "strategy": strategy, "params": parsed, "spec": spec or None,
+        "start": start, "timeframe": timeframe, "bars": len(data),
+        "window": [str(data.index[0].date()), str(data.index[-1].date())],
+        "cost": {"fees_bps": round(cost.fees * 1e4, 4),
+                 "slippage_bps": round(cost.slippage * 1e4, 4),
+                 "calibrated": calibrate},
+        "engines": {n: r.metrics for n, r in results.items()},
+    }
+    echo(f"\n{strat}  on  {symbol}  "
+         f"({len(data)} bars, {data.index[0].date()} -> {data.index[-1].date()})")
+    echo(cost.summary())
     keys = ["final_equity", "total_return_pct", "cagr_pct", "sharpe", "sortino", "calmar",
             "max_drawdown_pct", "num_trades"]
     header = f"{'metric':<20}" + "".join(f"{n:>14}" for n in results)
-    typer.echo(header)
-    typer.echo("-" * len(header))
+    echo(header)
+    echo("-" * len(header))
     for k in keys:
         row = f"{k:<20}" + "".join(f"{str(r.metrics.get(k)):>14}" for r in results.values())
-        typer.echo(row)
+        echo(row)
 
     if log_experiment:
         from quant.research import ExperimentStore, log_backtest
@@ -467,14 +585,16 @@ def backtest(
             ids = [log_backtest(store, r, symbol=symbol, strategy=strategy, params=parsed,
                                 start=start, timeframe=timeframe, cost=cost, data=data, notes=note)
                    for r in results.values()]
-        typer.echo(f"\nlogged experiment(s) {ids} (quant experiments to review)")
+        payload["experiment_ids"] = ids
+        echo(f"\nlogged experiment(s) {ids} (quant experiments to review)")
 
     if plot:
         from quant.backtest.plots import plot_equity
 
         path = plot_equity(results, out_path=f"reports/equity_{symbol}_{strategy}.html",
                            title=f"{strat.name} on {symbol}")
-        typer.echo(f"\nEquity/drawdown chart -> {path}")
+        payload["plot_path"] = str(path)
+        echo(f"\nEquity/drawdown chart -> {path}")
 
     if report:
         from quant.backtest.metrics import trade_stats
@@ -488,7 +608,11 @@ def backtest(
                             out_path=f"reports/report_{symbol}_{strategy}.html",
                             title=f"{strat.name} on {symbol}",
                             subtitle=f"{name} · {data.index[0].date()} -> {data.index[-1].date()} · {cost.summary()}")
-        typer.echo(f"\nReport -> {path}")
+        payload["report_path"] = str(path)
+        echo(f"\nReport -> {path}")
+
+    if as_json:
+        _emit_json("backtest", payload)
 
 
 @app.command()
@@ -497,6 +621,7 @@ def experiments(
     symbol: str = typer.Option("", help="filter by symbol"),
     limit: int = typer.Option(20, help="how many recent experiments to show"),
     show: int = typer.Option(0, "--id", help="show the full record for one experiment id"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Review logged backtest experiments (the anti-overfitting research log)."""
     from quant.research import ExperimentStore
@@ -505,8 +630,14 @@ def experiments(
         if show:
             rec = store.get(show)
             if rec is None:
+                if as_json:
+                    _emit_json("experiments", {"error": f"no experiment #{show}"}, ok=False)
+                    raise typer.Exit(code=1)
                 typer.echo(f"no experiment #{show}")
                 raise typer.Exit(code=1)
+            if as_json:
+                _emit_json("experiments", {"mode": "one", "record": rec})
+                return
             dirty = " (dirty)" if rec["git_dirty"] else ""
             typer.echo(f"\nexperiment #{rec['id']}  {rec['kind']}  {rec['symbol']}/{rec['strategy']}")
             typer.echo(f"  run_at   : {rec['run_at']}")
@@ -519,6 +650,9 @@ def experiments(
                 typer.echo(f"  notes    : {rec['notes']}")
             return
         df = store.recent(limit=limit, strategy=strategy or None, symbol=symbol or None)
+        if as_json:
+            _emit_json("experiments", {"mode": "list", "records": _df_records(df)})
+            return
         if df.empty:
             typer.echo("no experiments logged yet (run `quant backtest ...`)")
             return
@@ -531,6 +665,7 @@ def lifecycle(
     name: str = typer.Argument("", help="spec name (blank + --all = every spec)"),
     all_specs: bool = typer.Option(False, "--all", help="evaluate every spec in the file"),
     config: str = typer.Option("", help="spec file (default: configs/strategies.json)"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Pre-committed promote/retire health check for named strategy specs.
 
@@ -547,6 +682,10 @@ def lifecycle(
         chosen = list(specs.values())
     elif name:
         if name not in specs:
+            if as_json:
+                _emit_json("lifecycle", {"error": f"no spec named {name}",
+                                         "available": sorted(specs)}, ok=False)
+                raise typer.Exit(code=1)
             typer.echo(f"no spec named {name!r}; available: {sorted(specs)}")
             raise typer.Exit(code=1)
         chosen = [specs[name]]
@@ -554,6 +693,7 @@ def lifecycle(
         raise typer.BadParameter("give a spec NAME or --all")
 
     any_breach = False
+    evaluated = []
     for sp in chosen:
         data = _load(sp.symbol, sp.start, sp.timeframe)
         strat = get_strategy_cls(sp.strategy)(**sp.params)
@@ -564,11 +704,21 @@ def lifecycle(
         trades = int(strat.generate_signals(data)["entries"].loc[window_start:].sum())
         rep = check_lifecycle(sp.name, state=sp.state, equity=res.equity_curve,
                               num_trades=trades, rules=rules, timeframe=sp.timeframe)
-        typer.echo(rep.summary())
-        for b in rep.breaches:
-            typer.echo(f"  breach: {b}")
+        evaluated.append({
+            "name": rep.name, "state": rep.state, "ok": rep.ok, "verdict": rep.verdict,
+            "window_bars": rep.window_bars, "rolling_sharpe": rep.rolling_sharpe,
+            "window_return_pct": rep.window_return_pct,
+            "window_drawdown_pct": rep.window_drawdown_pct, "trades": rep.trades,
+            "breaches": rep.breaches,
+        })
+        if not as_json:
+            typer.echo(rep.summary())
+            for b in rep.breaches:
+                typer.echo(f"  breach: {b}")
         any_breach = any_breach or not rep.ok
 
+    if as_json:
+        _emit_json("lifecycle", {"specs": evaluated}, ok=not any_breach)
     raise typer.Exit(code=1 if any_breach else 0)
 
 
@@ -601,11 +751,19 @@ def note_new(
 def note_list(
     status: str = typer.Option("", help="filter: idea | testing | adopted | rejected"),
     notes_dir: str = typer.Option("", "--dir", help="notes directory (default: research_notes/)"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """List knowledge-base notes, newest first."""
     from quant.research import list_notes
 
     notes = list_notes(notes_dir or None, status=status or None)
+    if as_json:
+        _emit_json("note.list", {"records": [
+            {"title": n.title, "status": n.status, "created": n.created,
+             "strategy": n.strategy or None, "symbols": n.symbols,
+             "experiments": n.experiments, "path": str(n.path)}
+            for n in notes]})
+        return
     if not notes:
         typer.echo("no notes yet - start one with: quant note new \"my idea\"")
         return
@@ -745,6 +903,7 @@ def walkforward(
     sort_by: str = typer.Option("sharpe"),
     engine: str = typer.Option("vectorbt", help="OOS engine: vectorbt | backtrader "
                                                  "(optimization always uses vectorbt)"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Walk-forward validation: optimize on train, score on unseen test, roll forward."""
     from quant.backtest.walkforward import summarize, walk_forward
@@ -756,22 +915,30 @@ def walkforward(
                       train_bars=train_bars, test_bars=test_bars, sort_by=sort_by,
                       timeframe=timeframe, engine_cls=_engine_cls(engine))
 
-    typer.echo(f"\nWalk-forward [{strategy}] on {symbol}: {len(wf)} folds "
-               f"(train={train_bars}, test={test_bars} bars)\n")
-    typer.echo(wf.to_string(index=False))
-
     s = summarize(wf)
-    typer.echo("\n--- robustness summary ---")
-    for k, v in s.items():
-        typer.echo(f"{k:<22}: {v}")
     eff = s["wf_efficiency"]
     verdict = ("robust" if eff >= 0.5 else "fragile/overfit" if eff >= 0 else "broken OOS")
-    typer.echo(f"\nVerdict: WF efficiency {eff} -> {verdict} "
-               f"(OOS Sharpe {s['mean_oos_sharpe']} vs IS {s['mean_is_sharpe']})")
-
     csv_path = Path("reports") / f"walkforward_{symbol}_{strategy}.csv"
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     wf.to_csv(csv_path, index=False)
+
+    if as_json:
+        _emit_json("walkforward", {
+            "symbol": symbol, "strategy": strategy,
+            "train_bars": train_bars, "test_bars": test_bars,
+            "folds": _df_records(wf), "summary": s, "verdict": verdict,
+            "csv_path": str(csv_path),
+        })
+        return
+
+    typer.echo(f"\nWalk-forward [{strategy}] on {symbol}: {len(wf)} folds "
+               f"(train={train_bars}, test={test_bars} bars)\n")
+    typer.echo(wf.to_string(index=False))
+    typer.echo("\n--- robustness summary ---")
+    for k, v in s.items():
+        typer.echo(f"{k:<22}: {v}")
+    typer.echo(f"\nVerdict: WF efficiency {eff} -> {verdict} "
+               f"(OOS Sharpe {s['mean_oos_sharpe']} vs IS {s['mean_is_sharpe']})")
     typer.echo(f"Folds saved -> {csv_path}")
 
 
@@ -863,8 +1030,11 @@ def web(
 def reconcile(
     broker: str = typer.Option("alpaca", help="alpaca | paper"),
     alert: bool = typer.Option(False, "--alert", help="also send an alert on any issue"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Reconcile the broker's book against the journal (untracked/unprotected/orphan)."""
+    from dataclasses import asdict
+
     from quant.execution import TradeJournal
     from quant.ops.notify import get_notifier
     from quant.ops.reconcile import reconcile as run_reconcile
@@ -872,10 +1042,16 @@ def reconcile(
     brk = _live_broker(broker)
     with TradeJournal() as tj:
         rep = run_reconcile(brk, tj)
-    typer.echo(f"\n{rep.summary()}  (checked {rep.checked_at})")
-    typer.echo("positions: " + (", ".join(f"{k} {v:g}" for k, v in rep.positions.items()) or "none"))
-    for i in rep.issues:
-        typer.echo(f"  [{i.severity}] {i.detail}")
+    if as_json:
+        _emit_json("reconcile", {
+            "summary": rep.summary(), "checked_at": rep.checked_at,
+            "positions": rep.positions, "issues": [asdict(i) for i in rep.issues],
+        }, ok=rep.ok)
+    else:
+        typer.echo(f"\n{rep.summary()}  (checked {rep.checked_at})")
+        typer.echo("positions: " + (", ".join(f"{k} {v:g}" for k, v in rep.positions.items()) or "none"))
+        for i in rep.issues:
+            typer.echo(f"  [{i.severity}] {i.detail}")
     if alert and rep.issues:
         get_notifier().send("CRITICAL" if not rep.ok else "WARN", "Reconcile", rep.summary())
     raise typer.Exit(code=0 if rep.ok else 1)
@@ -914,21 +1090,29 @@ def oms(
     broker: str = typer.Option("alpaca", help="alpaca | paper (only needed with --sync)"),
     sync: bool = typer.Option(False, "--sync", help="poll the broker and advance order states first"),
     limit: int = typer.Option(20, help="how many recent orders to list"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Order lifecycle: list tracked orders and their state (optionally sync from the broker)."""
     from quant.execution import TradeJournal
     from quant.ops.oms import OMS
 
     with TradeJournal() as tj:
+        synced = None
         if sync:
-            n = OMS(tj).sync(_live_broker(broker))
-            typer.echo(f"synced: {n} order(s) advanced\n")
+            synced = OMS(tj).sync(_live_broker(broker))
+            if not as_json:
+                typer.echo(f"synced: {synced} order(s) advanced\n")
         rows = tj.orders(limit=limit)
+        cols = ["id", "symbol", "side", "qty", "status", "intended_price",
+                "avg_fill_price", "filled_qty", "broker_order_id"]
+        if as_json:
+            avail = [c for c in cols if c in rows.columns]
+            _emit_json("oms", {"synced": synced, "db": str(tj.path),
+                               "records": _df_records(rows[avail]) if not rows.empty else []})
+            return
         if rows.empty:
             typer.echo("no orders tracked yet - place one via `quant live --execute`")
             return
-        cols = ["id", "symbol", "side", "qty", "status", "intended_price",
-                "avg_fill_price", "filled_qty", "broker_order_id"]
         typer.echo(f"Tracked orders (newest first), db: {tj.path}\n")
         typer.echo(rows[cols].to_string(index=False))
 
@@ -937,6 +1121,7 @@ def oms(
 def tca(
     strategy: str = typer.Option("", help="filter to one strategy (blank = all)"),
     limit: int = typer.Option(1000, help="how many recent orders to analyse"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Transaction cost analysis: slippage (intended vs actual fill) + commissions."""
     from quant.execution import TradeJournal
@@ -944,11 +1129,20 @@ def tca(
 
     with TradeJournal() as tj:
         rep = tca_report(tj, strategy=strategy or None, limit=limit)
+    cols = ["symbol", "side", "filled_qty", "intended_price", "avg_fill_price",
+            "slippage_bps", "total_cost_usd"]
+    avail = [c for c in cols if c in rep.per_order.columns]
+    if as_json:
+        stats = {k: getattr(rep, k) for k in (
+            "n_orders", "n_filled", "fill_rate", "avg_slippage_bps",
+            "median_slippage_bps", "worst_slippage_bps", "total_slippage_usd",
+            "total_commission_usd", "total_cost_usd", "total_notional_usd",
+            "cost_bps_of_notional")}
+        _emit_json("tca", {"summary": rep.summary(), **stats,
+                           "per_order": _df_records(rep.per_order[avail]) if rep.n_filled else []})
+        return
     typer.echo("\n" + rep.summary())
     if rep.n_filled:
-        cols = ["symbol", "side", "filled_qty", "intended_price", "avg_fill_price",
-                "slippage_bps", "total_cost_usd"]
-        avail = [c for c in cols if c in rep.per_order.columns]
         typer.echo("\nper-order:")
         typer.echo(rep.per_order[avail].to_string(index=False))
 
@@ -957,19 +1151,29 @@ def tca(
 def health(
     max_silence_minutes: int = typer.Option(1500, help="flag a component silent longer than this (~25h)"),
     alert: bool = typer.Option(False, "--alert", help="send an alert if health is degraded"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """System health: per-component heartbeats and missed-run detection."""
+    from dataclasses import asdict
+
     from quant.execution import TradeJournal
     from quant.ops.health import health_check
     from quant.ops.notify import get_notifier
 
     with TradeJournal() as tj:
         rep = health_check(tj, max_silence_minutes=max_silence_minutes)
-    typer.echo("\n" + rep.summary())
-    for c in rep.components:
-        age = f"{c.age_minutes:.0f}m ago" if c.age_minutes is not None else "never"
-        flag = "  <<< STALE" if c.stale else ""
-        typer.echo(f"  {c.component:<12} {c.status:<8} {age}{flag}  {c.detail}")
+    if as_json:
+        _emit_json("health", {
+            "summary": rep.summary(), "checked_at": rep.checked_at,
+            "max_silence_minutes": rep.max_silence_minutes, "problems": rep.problems,
+            "components": [asdict(c) for c in rep.components],
+        }, ok=rep.ok)
+    else:
+        typer.echo("\n" + rep.summary())
+        for c in rep.components:
+            age = f"{c.age_minutes:.0f}m ago" if c.age_minutes is not None else "never"
+            flag = "  <<< STALE" if c.stale else ""
+            typer.echo(f"  {c.component:<12} {c.status:<8} {age}{flag}  {c.detail}")
     if alert and not rep.ok:
         get_notifier().critical("Health degraded", "; ".join(rep.problems))
     raise typer.Exit(code=0 if rep.ok else 1)
@@ -984,6 +1188,7 @@ def drift(
     timeframe: str = typer.Option("1d"),
     min_agreement: float = typer.Option(0.8, help="flag drift below this backtest/live agreement"),
     alert: bool = typer.Option(False, "--alert", help="send an alert if drift is detected"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Backtest-vs-live drift: do the live runner's actions match what the backtest expected?"""
     from quant.execution import TradeJournal
@@ -997,6 +1202,18 @@ def drift(
         live_log = tj.live_log(limit=10_000, symbol=symbol, strategy=strategy)
     rep = decision_drift(data, strat, live_log, symbol=symbol, strategy_name=strategy,
                          min_agreement=min_agreement)
+    if as_json:
+        _emit_json("drift", {
+            "summary": rep.summary(), "symbol": rep.symbol, "strategy": rep.strategy,
+            "n_bars": rep.n_bars, "n_expected": rep.n_expected, "n_live": rep.n_live,
+            "n_matched": rep.n_matched, "agreement": rep.agreement,
+            "min_agreement": rep.min_agreement,
+            "missed": [[str(d), a] for d, a in rep.missed],
+            "extra": [[str(d), a] for d, a in rep.extra],
+        }, ok=rep.ok)
+        if alert and not rep.ok:
+            get_notifier().warn("Backtest/live drift", rep.summary())
+        raise typer.Exit(code=0 if rep.ok else 1)
     typer.echo("\n" + rep.summary())
     if rep.missed:
         typer.echo(f"\nmissed (backtest would trade, live didn't): {len(rep.missed)}")
