@@ -40,10 +40,20 @@ _TEMPLATE = """## 假設
 """
 
 
+_MAX_SLUG = 40  # filenames stay scannable; the full title lives in frontmatter
+
+
 def _slugify(title: str) -> str:
-    """Filesystem-safe slug: keep word characters, join the rest with '-'."""
+    """Filesystem-safe slug: keep word characters, join the rest with '-'.
+
+    Capped at _MAX_SLUG chars, cut at a word boundary - long descriptive titles
+    belong in the note's frontmatter, not in the filename.
+    """
     slug = re.sub(r"[^\w]+", "-", title.lower(), flags=re.UNICODE).strip("-")
-    return slug or "note"
+    if len(slug) > _MAX_SLUG:
+        head = slug[:_MAX_SLUG]
+        slug = head.rsplit("-", 1)[0] if "-" in head else head
+    return slug.strip("-") or "note"
 
 
 @dataclass

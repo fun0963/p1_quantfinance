@@ -57,3 +57,15 @@ def test_unicode_title_slug_is_filesystem_safe(tmp_path):
     p = create_note("動量 vs 均線交叉!", notes_dir=tmp_path)
     assert p.exists()
     assert parse_note(p).title == "動量 vs 均線交叉!"
+
+
+def test_long_title_slug_is_capped_but_full_title_kept(tmp_path):
+    """Filenames must stay short (user-reported pain: 80+ char slugs); the
+    descriptive title still round-trips via frontmatter untouched."""
+    title = ("alpaca hidden gems: MOC OPG auction orders align live fills "
+             "with backtest assumptions and then some more words")
+    p = create_note(title, notes_dir=tmp_path)
+    slug = p.stem[len("2026-01-01-"):]                 # strip the date prefix
+    assert len(slug) <= 40
+    assert not slug.endswith("-")
+    assert parse_note(p).title == title                # nothing lost

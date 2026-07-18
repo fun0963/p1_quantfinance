@@ -31,7 +31,7 @@ p1_quantfinance/
 │   ├── research/             # 研究紀律:實驗記錄系統
 │   └── web/                  # 唯讀網頁儀表盤(FastAPI)
 ├── tests/                    # 36 個測試檔、233 個測試(鏡像 src/)
-├── scripts/                  # ci.ps1(本機 CI)、daily_live.ps1(排程包裝)
+├── scripts/                  # ci.ps1(本機 CI)、trading.cmd/.ps1(一鍵啟停)、daily_live.ps1
 ├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
 ├── research_notes/           # ⭐ 研究知識庫:一個想法一頁(假設/做法/結果/結論)
 ├── portfolios/example.json   # 組合設定範例(設定是資料,不是程式)
@@ -40,6 +40,25 @@ p1_quantfinance/
 ├── Dockerfile + docker-compose.yml   # 容器化(含 TimescaleDB)
 └── .github/workflows/ci.yml  # CI:ruff + mypy + pytest(py3.11/3.12)
 ```
+
+### 研究筆記清單(完整路徑)
+
+檔名規則 `research_notes/YYYY-MM-DD-<短slug>.md`(slug 上限 40 字元,完整標題在檔內 frontmatter);
+即時清單以 `quant note list` 為準。截至 2026-07-18:
+
+| 完整路徑 | 狀態 | 一句話 |
+|---------|------|--------|
+| [research_notes/2026-07-17-momentum-beats-ma-cross-oos.md](research_notes/2026-07-17-momentum-beats-ma-cross-oos.md) | adopted | SPY 上 momentum 樣本外勝過 ma_cross |
+| [research_notes/2026-07-17-frictionless-backtests-overstate.md](research_notes/2026-07-17-frictionless-backtests-overstate.md) | adopted | 零摩擦回測系統性高估報酬 |
+| [research_notes/2026-07-17-lookback-100-survives.md](research_notes/2026-07-17-lookback-100-survives.md) | adopted | lookback=100 過成本+OOS 檢驗,定為 spy_momentum spec |
+| [research_notes/2026-07-17-buffer-degenerates-to-hold.md](research_notes/2026-07-17-buffer-degenerates-to-hold.md) | rejected | buffer 參數退化成買進持有(num_trades=1 陷阱) |
+| [research_notes/2026-07-17-1min-ma-cross-cost-dominated.md](research_notes/2026-07-17-1min-ma-cross-cost-dominated.md) | rejected | 天真 1min ma_cross 被成本吃光(-81.8%/6週) |
+| [research_notes/2026-07-18-qqq-slippage-near-zero.md](research_notes/2026-07-18-qqq-slippage-near-zero.md) | adopted | 實測 QQQ 小額市價單滑價 ~0 bps(19/19 成交) |
+| [research_notes/2026-07-18-gap-tradingview-ux.md](research_notes/2026-07-18-gap-tradingview-ux.md) | idea | 對照 TradingView 的人性化缺口(K 線進出點圖等) |
+| [research_notes/2026-07-18-gap-report-metrics.md](research_notes/2026-07-18-gap-report-metrics.md) | idea | 對照 QC/QuantStats 的報告指標缺口(benchmark 疊圖等) |
+| [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | idea | AI 友善介面缺口(--json / 狀態快照 / 唯讀 MCP) |
+| [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | idea | FOMC/CPI 事件日盲點(先當研究題目) |
+| [research_notes/2026-07-18-alpaca-moc-opg-orders.md](research_notes/2026-07-18-alpaca-moc-opg-orders.md) | idea | MOC/OPG 集合競價單可對齊回測成交假設 |
 
 ### 各資料夾細節(由下層往上層)
 
