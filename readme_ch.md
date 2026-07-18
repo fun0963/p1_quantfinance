@@ -18,7 +18,7 @@ p1_quantfinance/
 ├── config/settings.py        # 全系統唯一設定來源(pydantic + .env)
 ├── configs/strategies.json   # ⭐ 具名策略規格:params/風控/生命週期規則(版控)
 ├── src/quant/                # 主程式(約 6,400 行)
-│   ├── cli.py                # ⭐ 進入點:24 個 typer 指令
+│   ├── cli.py                # ⭐ 進入點:25 個 typer 指令
 │   ├── core/                 # 共通型別(Signal/Order)
 │   ├── utils/                # loguru 日誌
 │   ├── data/                 # 行情抓取、快取、品質、完整性
@@ -134,7 +134,7 @@ quant info                              # 確認設定與已註冊策略
 
 > 沒啟用 venv 時的等效寫法:`& .\.venv\Scripts\python.exe -m quant.cli <指令>`
 
-### 1. 指令總表(24 個)
+### 1. 指令總表(25 個)
 
 **研究:**
 
@@ -165,6 +165,7 @@ quant info                              # 確認設定與已註冊策略
 
 | 指令 | 用途 |
 |------|------|
+| `quant status` | **一發聚合快照**:帳戶+對帳+health+近期決策/訂單+TCA+specs(分區降級,broker 掛了也照出本地狀態;`--offline` 跳過網路) |
 | `quant journal` | 查交易紀錄(`--session N` / `--live`) |
 | `quant reconcile` | 對帳:券商實際部位 vs 交易紀錄(`--alert` 不符時告警) |
 | `quant oms` | 訂單狀態機檢視(每筆單的生命週期與稽核軌跡) |
@@ -178,9 +179,9 @@ quant info                              # 確認設定與已註冊策略
 
 共用選項:`--strategy`、`--params "k=v,k=v"`、`--start YYYY-MM-DD`、`--timeframe 1d`。
 
-**機器可讀輸出 `--json`**(給腳本 / AI agent 用,15 個查詢類指令支援):
-`info`、`account`、`backtest`、`walkforward`、`check`、`experiments`、`lifecycle`、`note list`、
-`live`、`journal`、`oms`、`tca`、`health`、`reconcile`、`drift`。
+**機器可讀輸出 `--json`**(給腳本 / AI agent 用,16 個查詢類指令支援):
+`status`、`info`、`account`、`backtest`、`walkforward`、`check`、`experiments`、`lifecycle`、
+`note list`、`live`、`journal`、`oms`、`tca`、`health`、`reconcile`、`drift`。
 契約:**stdout 只有一份 JSON 文件**(日誌走 stderr,可安心 `| jq`);頂層鍵 `command` + `data`
 (有過/不過語意的指令再加 `ok`,exit code 不變);數字保持數字(不會變字串);純 ASCII(cp950 安全)。
 例:`quant tca --json` 直接取 `data.avg_slippage_bps`,不必解析人類表格。

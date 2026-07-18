@@ -14,7 +14,7 @@
 | 原始碼 | 67 個 `.py`、約 6,700 LOC(`src/quant/` + `config/`) |
 | 測試 | 36 個測試檔、**232 passed / 1 skipped**;ruff + mypy 全綠 |
 | Python | 3.11+(開發環境 3.13);`src/` layout,套件名 `quant` |
-| 進入點 | `quant` CLI(typer,24 指令 + `note new/list` 子指令)+ FastAPI 唯讀儀表盤 |
+| 進入點 | `quant` CLI(typer,25 指令 + `note new/list` 子指令)+ FastAPI 唯讀儀表盤 |
 | 架構評分 | 分層/耦合 **8/10**、測試/CI **8/10**、可維護性 **7/10**(已修正,見 §7) |
 
 ---
@@ -92,7 +92,7 @@
 | **quant/portfolio/** | 多策略權重配置與混合回測 | `portfolio.py`:`PortfolioLeg`/`PortfolioResult`/`run_portfolio()`/`load_portfolio_config()`;算混合 vs 加權平均、腿間相關、分散化比率 | backtest、strategies、data | `test_portfolio` |
 | **quant/research/** | 研究紀律層(M4)— 實驗記錄 + 生命週期 | `experiments.py`:`ExperimentStore`(SQLite `data/experiments.db`,WAL)記錄每次回測(git-hash/dirty、參數、資料窗、成本 bps、指標);`lifecycle.py`:`LifecycleRules`/`check_lifecycle()`(**M6.5 事前寫死的晉升/退場規則**:trailing 視窗 rolling Sharpe / 回撤 / 活動度,唯讀 `LifecycleReport`);`notes.py`:**研究知識庫(M4.6)**——`research_notes/` 一個想法一頁 Markdown(假設/做法/結果/結論),極簡 frontmatter(無 YAML 依賴),`experiments:` 連回實驗 id,CLI `quant note new/list`。未來因子框架也放這 | config、utils、backtest.metrics(純函式) | `test_experiments/test_lifecycle/test_notes` |
 | **quant/web/** | 唯讀結果儀表盤(FastAPI) | `app.py`:`create_app()`(App Factory);`routes.py`(7 端點:backtest/portfolio/sweep/walkforward/journal;薄包裝呼叫既有函式);`schemas.py`(pydantic 請求模型;backtest 含 slippage_bps);`static/index.html`(plotly.js CDN,無 Node 建置) | backtest、portfolio、execution、data | `test_web`(optional-dep skip) |
-| **quant/cli.py** | typer 進入點,串起所有層 | 24 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments/lifecycle`;`backtest` 含 `--spec/--slippage-bps/--calibrate/--report/--log`)、交易(`paper/live/schedule/protect/account`;`live`/`schedule` 支援 `--spec`,`schedule --spec` 可重複=一程序多策略;**spec 不可含 `execute`,上實盤永遠是 CLI 明確旗標**)、營運(`journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls/_cfg_from_spec` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
+| **quant/cli.py** | typer 進入點,串起所有層 | 25 指令:研究(`download/backtest/sweep/walkforward/portfolio/check/experiments/lifecycle`;`backtest` 含 `--spec/--slippage-bps/--calibrate/--report/--log`)、交易(`paper/live/schedule/protect/account`;`live`/`schedule` 支援 `--spec`,`schedule --spec` 可重複=一程序多策略;**spec 不可含 `execute`,上實盤永遠是 CLI 明確旗標**)、營運(`status`(**聚合快照,分區降級**)`/journal/reconcile/report/oms/tca/health/drift/integrity/alert-test/web`);**15+1 個查詢指令支援 `--json`**(stdout 僅一份 JSON、日誌走 stderr、exit code 不變);解析輔助 `_parse_params/_parse_grid/_parse_legs/_engine_cls/_cfg_from_spec/_emit_json/_df_records` | 全部 | 間接(經 scheduler/paper 等)+ `test_cli` |
 | **根目錄基建** | 打包 / 容器 / CI / 腳本 / 文件 | `pyproject.toml`(ruff line=120、mypy、pytest、extras `[timescale]`/`[web]`);`Dockerfile` + `docker-compose.yml`;`.github/workflows/ci.yml`(ruff+mypy+pytest);`scripts/`(`ci.ps1` 本機鏡像、`daily_live.ps1`);`docs/`(GUIDE/USAGE/DEPLOYMENT/SCHEDULING) | — | `scripts/ci.ps1` |
 
 ---
@@ -175,7 +175,8 @@ run_schedule(APScheduler) → 每次觸發 _job：
 5. **接下來(依優先序)**:
    - ✅ **一鍵啟停工具(2026-07-18,取代 Task Scheduler)**:`scripts/trading.cmd`(雙擊=start;`stop`/`status`;防重複啟動、`-u` 即時日誌到 logs/)。**刻意不做常駐**:機器不定時關機,使用者選擇「想跑再點一下」模式;重開機後要交易就再點一次。日後要常駐再走 docs/SCHEDULING.md 的工作排程器。
    - ⬜ **開盤日記得啟動**:每個交易日開機後雙擊 `scripts\trading.cmd`(或叫 Claude 跑 `trading.ps1 start`),用 `quant health` 驗 heartbeat。
-   - ✅ **CLI `--json` 機器可讀輸出(2026-07-18)**:15 個查詢類指令(info/account/backtest/walkforward/check/experiments/lifecycle/note list/live/journal/oms/tca/health/reconcile/drift)。契約:stdout 僅一份 JSON(日誌在 stderr)、頂層 `command`+`data`(+`ok`)、exit code 不變、numpy 數字不變字串、ensure_ascii。動機與後續(status 快照、唯讀 MCP)見 research_notes/2026-07-18-gap-ai-interface.md。
+   - ✅ **CLI `--json` 機器可讀輸出(2026-07-18)**:15 個查詢類指令(info/account/backtest/walkforward/check/experiments/lifecycle/note list/live/journal/oms/tca/health/reconcile/drift)。契約:stdout 僅一份 JSON(日誌在 stderr)、頂層 `command`+`data`(+`ok`)、exit code 不變、numpy 數字不變字串、ensure_ascii。動機與後續見 research_notes/2026-07-18-gap-ai-interface.md。
+   - ✅ **`quant status` 聚合快照(2026-07-18)**:帳戶+對帳+health+近期決策/訂單+TCA+specs 一發到位(原本 5 個指令);**分區降級**(broker 掛只標該區 error,不遮本地狀態)、`--offline` 跳網路、lifecycle 只列不評估(保持秒回)。下一步:唯讀 MCP server。
    - ⬜ **累積 TCA 樣本**:探針多跑幾個交易日、換 SPY 也量,樣本夠了再回頭定案 `--calibrate` 的使用準則。
    - ⬜ **走查驗收**:照 [walkthrough_ch.md](walkthrough_ch.md) 從發想到檢討完整走一輪(使用者主導)。
    - ⬜ 第二支正式策略(用走查流程孵化);(遠期)存活者偏差解鎖後才做掃描器。

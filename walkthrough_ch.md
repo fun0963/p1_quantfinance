@@ -13,7 +13,7 @@
 | 0.1 | 設定與策略清單 | `quant info` | `alpaca_paper: True`、金鑰 `set`、策略至少 `ma_cross`/`momentum` |
 | 0.2 | 券商連線(唯讀) | `quant account` | `is_paper: True`、看得到 equity 與現有部位 |
 | 0.3 | 程式閘門 | `powershell -File scripts\ci.ps1` | ruff + mypy + pytest **全綠**(250+ 測試);紅了先修再研究 |
-| 0.4 | 系統健康 | `quant health` | 排程 heartbeat 是否活著、有無 stale |
+| 0.4 | 系統健康 | `quant status`(帳戶+對帳+heartbeat+近期決策一發看完;細查再用 `quant health`) | overall: ok;broker 區、health 區無 FAILED/STALE |
 
 **陷阱**:終端輸出若見亂碼,是 cp950 主控台問題(輸出字串一律 ASCII 的慣例就是為此)。
 

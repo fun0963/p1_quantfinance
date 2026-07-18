@@ -442,3 +442,46 @@ def test_json_walkforward(monkeypatch):
     doc = _json_doc(r)
     assert "wf_efficiency" in doc["data"]["summary"]
     assert doc["data"]["folds"] and doc["data"]["verdict"]
+
+
+def test_json_status_offline(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["status", "--offline", "--json"])
+    assert r.exit_code == 0, r.output
+    doc = _json_doc(r)
+    d = doc["data"]
+    assert d["broker"] == {"skipped": "offline"}
+    assert d["health"]["ok"] is True                     # empty journal: nothing stale
+    assert d["tca"]["n_filled"] == 0
+    assert {s["name"] for s in d["specs"]} >= {"spy_momentum"}
+    assert doc["ok"] is True
+
+
+def test_json_status_paper_broker_full(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["status", "--broker", "paper", "--json"])
+    assert r.exit_code == 0, r.output
+    d = _json_doc(r)["data"]
+    assert d["broker"]["reconcile"]["ok"] is True
+    assert d["broker"]["positions"] == []
+
+
+def test_json_status_broker_failure_degrades(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+
+    def boom(_name):
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(cli, "_live_broker", boom)
+    r = runner.invoke(cli.app, ["status", "--json"])
+    doc = _json_doc(r)
+    assert "error" in doc["data"]["broker"]              # failed section reported...
+    assert "components" in doc["data"]["health"]         # ...local sections survive
+    assert doc["ok"] is False and r.exit_code == 1
+
+
+def test_status_human_offline_smoke(monkeypatch, tmp_path):
+    _tmp_journal(monkeypatch, tmp_path)
+    r = runner.invoke(cli.app, ["status", "--offline"])
+    assert r.exit_code == 0, r.output
+    assert "overall   : ok" in r.output and "spy_momentum" in r.output

@@ -398,6 +398,140 @@ def account(as_json: bool = typer.Option(False, "--json", help=_JSON_HELP)) -> N
 
 
 @app.command()
+def status(
+    broker: str = typer.Option("alpaca", help="alpaca | paper"),
+    offline: bool = typer.Option(False, "--offline",
+                                 help="skip broker calls (account/reconcile) - local state only"),
+    max_silence_minutes: int = typer.Option(1500, help="health: flag components silent longer than this"),
+    limit: int = typer.Option(5, help="recent decisions/orders to include"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
+) -> None:
+    """One-screen system snapshot: account, reconcile, health, recent decisions,
+    orders, TCA rollup, configured specs - what would otherwise take five commands.
+
+    Sections degrade independently: a broker outage marks that section failed but
+    never hides local state. Exit 1 when any checked section is not ok.
+    Note: specs are LISTED from config only; run `quant lifecycle --all` for verdicts.
+    """
+    from dataclasses import asdict
+
+    from quant.execution import TradeJournal
+    from quant.ops.health import health_check
+    from quant.ops.reconcile import reconcile as run_reconcile
+    from quant.ops.tca import tca_report
+    from quant.strategies.spec import load_specs
+
+    checked_at = datetime.now(UTC).isoformat(timespec="seconds")
+    sections: dict = {"checked_at": checked_at, "broker_name": broker}
+    checks: list[bool] = []
+
+    if offline:
+        sections["broker"] = {"skipped": "offline"}
+    else:
+        try:
+            brk = _live_broker(broker)
+            summary = brk.account_summary() if hasattr(brk, "account_summary") else {}
+            positions = brk.get_positions()
+            with TradeJournal() as tj:
+                rec = run_reconcile(brk, tj)
+            sections["broker"] = {
+                "account": summary,
+                "positions": [{"symbol": p.symbol, "qty": p.qty, "avg_price": p.avg_price}
+                              for p in positions],
+                "reconcile": {"ok": rec.ok, "summary": rec.summary(),
+                              "issues": [asdict(i) for i in rec.issues]},
+            }
+            checks.append(rec.ok)
+        except Exception as exc:  # noqa: BLE001 - degrade this section, keep the rest
+            sections["broker"] = {"error": f"{type(exc).__name__}: {exc}"}
+            checks.append(False)
+
+    try:
+        with TradeJournal() as tj:
+            hrep = health_check(tj, max_silence_minutes=max_silence_minutes)
+        sections["health"] = {"ok": hrep.ok, "summary": hrep.summary(),
+                              "problems": hrep.problems,
+                              "components": [asdict(c) for c in hrep.components]}
+        checks.append(hrep.ok)
+    except Exception as exc:  # noqa: BLE001
+        sections["health"] = {"error": f"{type(exc).__name__}: {exc}"}
+        checks.append(False)
+
+    try:
+        with TradeJournal() as tj:
+            live_rows = tj.live_log(limit=limit)
+            orders = tj.orders(limit=limit)
+            trep = tca_report(tj)
+        cols = ["id", "symbol", "side", "qty", "status", "avg_fill_price", "broker_order_id"]
+        avail = [c for c in cols if c in orders.columns]
+        sections["recent_decisions"] = _df_records(live_rows)
+        sections["recent_orders"] = _df_records(orders[avail]) if not orders.empty else []
+        sections["tca"] = {"summary": trep.summary(), "n_filled": trep.n_filled,
+                           "avg_slippage_bps": trep.avg_slippage_bps,
+                           "total_cost_usd": trep.total_cost_usd}
+    except Exception as exc:  # noqa: BLE001
+        sections["journal_error"] = f"{type(exc).__name__}: {exc}"
+        checks.append(False)
+
+    try:
+        sections["specs"] = [{"name": sp.name, "symbol": sp.symbol, "strategy": sp.strategy,
+                              "timeframe": sp.timeframe, "state": sp.state}
+                             for sp in load_specs(None).values()]
+    except Exception as exc:  # noqa: BLE001
+        sections["specs"] = {"error": f"{type(exc).__name__}: {exc}"}
+        checks.append(False)
+
+    overall = all(checks) if checks else True
+    if as_json:
+        _emit_json("status", sections, ok=overall)
+        raise typer.Exit(code=0 if overall else 1)
+
+    typer.echo(f"\n[STATUS] broker={broker}  checked {checked_at}")
+    b = sections["broker"]
+    if "skipped" in b:
+        typer.echo("  broker    : (skipped - offline)")
+    elif "error" in b:
+        typer.echo(f"  broker    : FAILED - {b['error']}")
+    else:
+        acct = b["account"]
+        acct_line = "  ".join(f"{k}={v}" for k, v in list(acct.items())[:4]) or "(no summary)"
+        typer.echo(f"  account   : {acct_line}")
+        typer.echo("  positions : "
+                   + (", ".join(f"{p['symbol']} {p['qty']:g}@{p['avg_price']:.2f}"
+                                for p in b["positions"]) or "none"))
+        typer.echo(f"  reconcile : {b['reconcile']['summary']}")
+        for i in b["reconcile"]["issues"]:
+            typer.echo(f"              [{i['severity']}] {i['detail']}")
+    h = sections["health"]
+    if "error" in h:
+        typer.echo(f"  health    : FAILED - {h['error']}")
+    else:
+        typer.echo(f"  health    : {h['summary']}")
+        for c in h["components"]:
+            age = f"{c['age_minutes']:.0f}m ago" if c["age_minutes"] is not None else "never"
+            flag = "  <<< STALE" if c["stale"] else ""
+            typer.echo(f"              {c['component']:<12} {c['status']:<8} {age}{flag}")
+    if "journal_error" in sections:
+        typer.echo(f"  journal   : FAILED - {sections['journal_error']}")
+    else:
+        for d in sections["recent_decisions"]:
+            typer.echo(f"  decision  : {d.get('logged_at', '?')}  {d.get('symbol')} "
+                       f"{d.get('action')} qty={d.get('qty')}")
+        if not sections["recent_decisions"]:
+            typer.echo("  decision  : (none yet)")
+        typer.echo(f"  tca       : {sections['tca']['summary']}")
+    spec_rows = sections["specs"]
+    if isinstance(spec_rows, dict):
+        typer.echo(f"  specs     : FAILED - {spec_rows['error']}")
+    else:
+        for sp in spec_rows:
+            typer.echo(f"  spec      : {sp['name']:<16} {sp['symbol']}/{sp['strategy']} "
+                       f"{sp['timeframe']} [{sp['state']}]")
+    typer.echo(f"  overall   : {'ok' if overall else 'NOT OK'}")
+    raise typer.Exit(code=0 if overall else 1)
+
+
+@app.command()
 def download(
     symbol: str,
     start: str = typer.Option("2020-01-01", help="YYYY-MM-DD"),
