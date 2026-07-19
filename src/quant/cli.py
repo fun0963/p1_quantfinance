@@ -1164,6 +1164,12 @@ def watch(
     below: float = typer.Option(0, help="trigger when close <= this level"),
     cross_ma: int = typer.Option(0, "--cross-ma",
                                  help="trigger when close CROSSED its N-bar MA on the latest bar"),
+    volume_spike: float = typer.Option(0, "--volume-spike",
+                                       help="trigger when last bar volume >= MULT x the "
+                                            "previous bars' average (see --volume-window)"),
+    volume_window: int = typer.Option(20, "--volume-window",
+                                      help="baseline window for --volume-spike (bars, "
+                                           "excludes the spike bar itself)"),
     timeframe: str = typer.Option("1d"),
     start: str = typer.Option("2023-01-01", help="history start (enough bars for the MA)"),
     alert: bool = typer.Option(False, "--alert", help="also push via the notifier when triggered"),
@@ -1173,15 +1179,18 @@ def watch(
 
     Evaluates exactly ONE condition on the latest bar, reports it, and with
     --alert pushes a notification when triggered. Stateless by design - run it
-    on whatever cadence you like; --cross-ma compares the last TWO bars, so a
-    once-per-bar run catches each cross exactly once.
+    on whatever cadence you like; --cross-ma compares the last TWO bars, and
+    --volume-spike is a property of the latest bar alone, so a once-per-bar
+    run catches each cross / spike exactly once.
     """
     from quant.ops.notify import get_notifier
 
     chosen = [(k, v) for k, v in (("above", above), ("below", below),
-                                  ("cross-ma", cross_ma)) if v]
+                                  ("cross-ma", cross_ma),
+                                  ("volume-spike", volume_spike)) if v]
     if len(chosen) != 1:
-        raise typer.BadParameter("give exactly one of --above / --below / --cross-ma")
+        raise typer.BadParameter(
+            "give exactly one of --above / --below / --cross-ma / --volume-spike")
     kind, arg = chosen[0]
 
     data = _load(symbol, start, timeframe)
@@ -1193,6 +1202,20 @@ def watch(
     elif kind == "below":
         triggered = last <= float(arg)
         detail = f"close {last:.2f} vs level {float(arg):.2f}"
+    elif kind == "volume-spike":
+        mult, win = float(arg), int(volume_window)
+        if win < 1:
+            raise typer.BadParameter("--volume-window must be >= 1")
+        vol = data["volume"].astype(float)
+        if len(vol) < win + 1:
+            raise typer.BadParameter(
+                f"need at least {win + 1} bars for --volume-spike (window {win})")
+        baseline = float(vol.iloc[-win - 1:-1].mean())
+        last_v = float(vol.iloc[-1])
+        ratio = (last_v / baseline) if baseline > 0 else 0.0
+        triggered = baseline > 0 and last_v >= mult * baseline
+        detail = (f"volume {last_v:,.0f} vs avg{win} {baseline:,.0f} "
+                  f"(x{ratio:.2f} {'>=' if triggered else '<'} {mult:g})")
     else:
         n = int(arg)
         if len(close) < n + 2:

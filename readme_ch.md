@@ -174,7 +174,7 @@ quant info                              # 確認設定與已註冊策略
 | `quant drift` | 回測預期 vs 實盤實際的決策偏差 |
 | `quant integrity` | point-in-time 檢查:歷史是否被資料源回溯改寫 |
 | `quant report` | 每日營運報告(`--alert` 推播 Telegram) |
-| `quant watch` | **一次性條件告警**:`--above/--below/--cross-ma` 擇一,觸發時 `--alert` 推 Telegram(無狀態,節奏自訂) |
+| `quant watch` | **一次性條件告警**:`--above/--below/--cross-ma/--volume-spike` 擇一,觸發時 `--alert` 推 Telegram(無狀態,節奏自訂;爆量基準 `--volume-window` 預設前 20 根均量) |
 | `quant alert-test` | 測試告警管線(驗證 Telegram 設定) |
 | `quant web` | **啟動網頁儀表盤** |
 

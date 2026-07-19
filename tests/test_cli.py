@@ -489,13 +489,16 @@ def test_status_human_offline_smoke(monkeypatch, tmp_path):
 
 
 # --- quant watch (one-shot condition alert) ----------------------------------
-def _flat_then_jump(n=40, base=100.0, jump=None):
+def _flat_then_jump(n=40, base=100.0, jump=None, vol_jump=None):
     idx = pd.date_range("2024-01-01", periods=n, freq="B", tz="UTC")
     close = pd.Series(base, index=idx)
     if jump is not None:
         close.iloc[-1] = jump
+    vol = pd.Series(1e6, index=idx)
+    if vol_jump is not None:
+        vol.iloc[-1] = vol_jump
     return pd.DataFrame({"open": close, "high": close, "low": close,
-                         "close": close, "volume": 1e6}, index=idx)
+                         "close": close, "volume": vol}, index=idx)
 
 
 def test_watch_cross_ma_triggers_on_cross(monkeypatch):
@@ -522,6 +525,25 @@ def test_watch_level_and_validation(monkeypatch):
     assert r3.exit_code != 0
     r4 = runner.invoke(cli.app, ["watch", "SPY", "--above", "50", "--cross-ma", "5"])
     assert r4.exit_code != 0                                   # two conditions
+    r5 = runner.invoke(cli.app, ["watch", "SPY", "--above", "50", "--volume-spike", "3"])
+    assert r5.exit_code != 0                                   # two conditions again
+
+
+def test_watch_volume_spike_triggers_and_quiet(monkeypatch):
+    # last bar 5x the flat 1e6 baseline -> triggered at 3x, ratio reported
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump(vol_jump=5e6))
+    r = runner.invoke(cli.app, ["watch", "SPY", "--volume-spike", "3", "--json"])
+    assert r.exit_code == 0, r.output
+    d = _json_doc(r)["data"]
+    assert d["triggered"] is True and "x5.00" in d["detail"]
+    # flat volume -> ratio 1.0, no trigger
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump())
+    r2 = runner.invoke(cli.app, ["watch", "SPY", "--volume-spike", "3", "--json"])
+    assert _json_doc(r2)["data"]["triggered"] is False
+    # baseline window must fit the history (40 bars -> window 40 needs 41)
+    r3 = runner.invoke(cli.app, ["watch", "SPY", "--volume-spike", "3",
+                                 "--volume-window", "40"])
+    assert r3.exit_code != 0
 
 
 def test_watch_alert_fires_only_when_triggered(monkeypatch):
