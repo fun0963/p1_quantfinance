@@ -60,6 +60,7 @@ p1_quantfinance/
 | [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | rejected | FOMC 盲點量化後不成立:暴露 -27bps/yr 噪音級、blackout 6.5 年綁一次 |
 | [research_notes/2026-07-18-alpaca-moc-opg-orders.md](research_notes/2026-07-18-alpaca-moc-opg-orders.md) | rejected | MOC/OPG 對齊暫緩:實測隔夜價差均值≈0(SPY),是噪音不是偏差 |
 | [research_notes/2026-07-19-gap-scan-24h-ai-trader-article-555-pdf.md](research_notes/2026-07-19-gap-scan-24h-ai-trader-article-555-pdf.md) | adopted | 外部「24h AI 交易員」架構比對:無系統性缺口;產出=斷路器通電(max_daily_loss=1000)+ watch --volume-spike |
+| [research_notes/2026-07-19-gld-slow-momentum-as-a-second.md](research_notes/2026-07-19-gld-slow-momentum-as-a-second.md) | rejected | 第二策略候選 GLD momentum:WF 0.44 否決;SPY 的淺回撤價值沒遷移(-24.2 vs B&H -26.4);全樣本 PSR 99.4% 會撒謊 |
 
 ### 各資料夾細節(由下層往上層)
 

@@ -186,6 +186,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
    - ✅ **唯讀 MCP server(2026-07-18,AI 友善三部曲完成)**:`quant.readapi` 共用查詢層(--json 與 MCP 同源)+ `quant.mcp_server`(FastMCP stdio,10 工具)+ `.mcp.json`(Claude Code 自動偵測,首次需同意)+ `quant mcp` 指令。**鐵律:只有查詢、永無下單**——AST 掃描測試禁止兩模組呼叫任何下單/改單/同步方法;真協定 in-memory 握手測試。細節見 research_notes/2026-07-18-gap-ai-interface.md。
    - ✅ **555.pdf 架構比對 + 啟用當日虧損斷路器(2026-07-19)**:逐頁視覺讀外部「24h AI 交易員」教學文(6 步閉環、30 子項,無程式碼無回測的概念文),對照結論=**無系統性缺口**——絕大多數子項「已建且更嚴謹」「有數據拒絕過」或「資產類別不適用」。唯一高價值產出:發現 `max_daily_loss` 斷路器**程式早已修好(audit P0 #5)但 spec 沒設值=裝了沒通電**;`AlpacaBroker.day_pnl()` 是**帳戶級**(equity−last_equity),數值必須用帳戶波動的尺設——三 spec 統一 1000(≈權益 1%,SPY 跌 ~2.2% 觸發;擋新倉、放行減倉)。緩議項與觸發條件見 research_notes/2026-07-19-gap-scan-24h-ai-trader-article-555-pdf.md(status: adopted)。同日補完可選項②:`quant watch --volume-spike`(最後一根量 ≥ 前 N 根均量 × MULT,`--volume-window` 預設 20、基準排除爆量 bar 自身;實測 QQQ 收盤分鐘 x3.24 觸發)。
    - ⬜ **累積 TCA 樣本**:探針多跑幾個交易日、換 SPY 也量,樣本夠了再回頭定案 `--calibrate` 的使用準則。
+   - ✅ **第二策略候選 #1:GLD momentum → rejected(2026-07-19,管線首次完整自跑)**:筆記先行(否決條件事前寫死)→ sweep(lookback 100 山頂平滑;buffer>0 全退化,舊陷阱在第二標的重現)→ **walk-forward 0.44 < 0.5 否決**(19 折、選參亂跳、OOS 靠 2024-26 金牛集中)→ 含成本雙引擎一致(Sharpe 0.75、PSR 99.4%——全樣本會被 regime 集中度撒謊的活教材)。GLD 版沒複製 SPY 的淺回撤價值(-24.2% vs B&H -26.4%,只淺 2.2pt)。實驗 #7/#8;復活條件見筆記。**第二支正式策略持續徵候選**(新假設新筆記,不做參數挖礦)。
    - ⬜ **走查驗收**:照 [walkthrough_ch.md](walkthrough_ch.md) 從發想到檢討完整走一輪(使用者主導)。
    - ⬜ 第二支正式策略(用走查流程孵化);(遠期)存活者偏差解鎖後才做掃描器。
 6. **範圍外(暫不做)**:台股、選擇權、M2 公司庫、M3 供應鏈、M9 事件層。
