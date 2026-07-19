@@ -177,6 +177,7 @@ run_schedule(APScheduler) → 每次觸發 _job：
 5. **接下來(依優先序)**:
    - ✅ **一鍵啟停工具(2026-07-18,取代 Task Scheduler)**:`scripts/trading.cmd`(雙擊=start;`stop`/`status`;防重複啟動、`-u` 即時日誌到 logs/)。**刻意不做常駐**:機器不定時關機,使用者選擇「想跑再點一下」模式;重開機後要交易就再點一次。日後要常駐再走 docs/SCHEDULING.md 的工作排程器。
    - ⬜ **開盤日記得啟動**:每個交易日開機後雙擊 `scripts\trading.cmd`(或叫 Claude 跑 `trading.ps1 start`),用 `quant health` 驗 heartbeat。
+   - ✅ **FOMC 事件日研究(2026-07-18,結論=不建事件基礎設施)**:`configs/fomc_dates.json`(官方排定決議日 2020-2026,緊急會議依定義排除)+ `scripts/fomc_study.py`。量測:FOMC 日只比平常熱 ~20%、momentum 暴露成本 **-27 bps/yr 噪音級**、31 次執行僅 1 次落在 FOMC 日(6.5 年綁一次的 blackout=死程式碼)→ 不做 blackout 也不做 banner;JSON 留給未來盤中策略(筆記 status: rejected 附復活條件)。
    - ✅ **MOC/OPG 執行對齊研究(2026-07-18,結論=暫不換)**:`scripts/gap_analysis.py` 離線量測 close→next-open 價差——SPY momentum 進出場日來回漂移 **-6 bps ≈ 0**(統計上為零),真正效應是**單次 ±57 bps 的噪音**(年化 tracking error ~125 bps,非虧損)。維持收盤後市價單;復活條件見 research_notes/2026-07-18-alpaca-moc-opg-orders.md(status: rejected)。
    - ✅ **CLI `--json` 機器可讀輸出(2026-07-18)**:15 個查詢類指令(info/account/backtest/walkforward/check/experiments/lifecycle/note list/live/journal/oms/tca/health/reconcile/drift)。契約:stdout 僅一份 JSON(日誌在 stderr)、頂層 `command`+`data`(+`ok`)、exit code 不變、numpy 數字不變字串、ensure_ascii。動機與後續見 research_notes/2026-07-18-gap-ai-interface.md。
    - ✅ **`quant status` 聚合快照(2026-07-18)**:帳戶+對帳+health+近期決策/訂單+TCA+specs 一發到位(原本 5 個指令);**分區降級**(broker 掛只標該區 error,不遮本地狀態)、`--offline` 跳網路、lifecycle 只列不評估(保持秒回)。

@@ -57,7 +57,7 @@ p1_quantfinance/
 | [research_notes/2026-07-18-gap-tradingview-ux.md](research_notes/2026-07-18-gap-tradingview-ux.md) | idea | 對照 TradingView 的人性化缺口(K 線進出點圖等) |
 | [research_notes/2026-07-18-gap-report-metrics.md](research_notes/2026-07-18-gap-report-metrics.md) | adopted | 報告指標補完:benchmark 疊圖、rolling Sharpe、turnover、PSR 全落地 |
 | [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | adopted | AI 友善介面三部曲:--json / status 快照 / 唯讀 MCP,全部完成 |
-| [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | idea | FOMC/CPI 事件日盲點(先當研究題目) |
+| [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | rejected | FOMC 盲點量化後不成立:暴露 -27bps/yr 噪音級、blackout 6.5 年綁一次 |
 | [research_notes/2026-07-18-alpaca-moc-opg-orders.md](research_notes/2026-07-18-alpaca-moc-opg-orders.md) | rejected | MOC/OPG 對齊暫緩:實測隔夜價差均值≈0(SPY),是噪音不是偏差 |
 
 ### 各資料夾細節(由下層往上層)
