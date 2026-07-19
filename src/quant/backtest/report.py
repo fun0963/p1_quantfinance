@@ -12,6 +12,7 @@ without it the report degrades to the original three panels.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -141,15 +142,18 @@ def build_report(
     data: pd.DataFrame | None = None,
     timeframe: str = "1d",
     rolling_window: int = 252,
+    source: str = "",
 ) -> Path:
     """Write a self-contained HTML tear sheet for one backtest result.
 
     `metrics` is the dict to tabulate (typically res.metrics merged with
     trade_stats). Pass the OHLCV `data` the backtest ran on to also get the
-    price+trade-marker panel and the buy-and-hold benchmark overlay/rows.
-    `timeframe` annualizes the rolling Sharpe; `rolling_window` is in bars
-    (default 252 = the lifecycle rules' default trailing window).
-    Returns the written path.
+    price+trade-marker panel, the buy-and-hold benchmark overlay/rows and a
+    data-provenance line (source feed + last-bar timestamp - a report should
+    say how fresh its data is). `timeframe` annualizes the rolling Sharpe;
+    `rolling_window` is in bars (default 252 = the lifecycle rules' default
+    trailing window); `source` overrides the provenance feed label (default:
+    the timeframe's registry feed). Returns the written path.
     """
     from plotly.subplots import make_subplots
 
@@ -246,6 +250,16 @@ def build_report(
                       legend=dict(orientation="h", yanchor="bottom", y=1.015, x=0),
                       title=title or f"{strategy} on {symbol}")
 
+    prov = ""
+    if bars is not None:
+        tf = get_timeframe(timeframe)
+        last = bars.index[-1]
+        last_s = (last.strftime("%Y-%m-%d %H:%M %Z") if tf.intraday
+                  else str(last.date()))
+        prov = (f"data: {source or tf.default_feed} · {timeframe} · {len(bars)} bars · "
+                f"last bar {last_s} · generated "
+                f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
+
     fig_html = fig.to_html(full_html=False, include_plotlyjs=True)
     page_title = title or f"{strategy} on {symbol}"
     html = f"""<!doctype html><html><head><meta charset="utf-8">
@@ -257,6 +271,7 @@ def build_report(
  table.metrics td.v{{text-align:right;font-variant-numeric:tabular-nums}}
 </style></head><body>
 <h1>{page_title}</h1><p class="sub">{subtitle}</p>
+<p class="sub">{prov}</p>
 {_metrics_table_html(metrics)}
 {fig_html}
 </body></html>"""

@@ -18,7 +18,7 @@ p1_quantfinance/
 ├── config/settings.py        # 全系統唯一設定來源(pydantic + .env)
 ├── configs/strategies.json   # ⭐ 具名策略規格:params/風控/生命週期規則(版控)
 ├── src/quant/                # 主程式(約 6,400 行)
-│   ├── cli.py                # ⭐ 進入點:26 個 typer 指令
+│   ├── cli.py                # ⭐ 進入點:27 個 typer 指令
 │   ├── core/                 # 共通型別(Signal/Order)
 │   ├── utils/                # loguru 日誌
 │   ├── data/                 # 行情抓取、快取、品質、完整性
@@ -30,7 +30,7 @@ p1_quantfinance/
 │   ├── ops/                  # 營運:告警、對帳、OMS、TCA、健康、偏差
 │   ├── research/             # 研究紀律:實驗記錄系統
 │   └── web/                  # 唯讀網頁儀表盤(FastAPI)
-├── tests/                    # 39 個測試檔、273 個測試(鏡像 src/)
+├── tests/                    # 39 個測試檔、288 個測試(鏡像 src/)
 ├── scripts/                  # ci.ps1(本機 CI)、trading.cmd/.ps1(一鍵啟停)、daily_live.ps1
 ├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
 ├── research_notes/           # ⭐ 研究知識庫:一個想法一頁(假設/做法/結果/結論)
@@ -54,7 +54,7 @@ p1_quantfinance/
 | [research_notes/2026-07-17-buffer-degenerates-to-hold.md](research_notes/2026-07-17-buffer-degenerates-to-hold.md) | rejected | buffer 參數退化成買進持有(num_trades=1 陷阱) |
 | [research_notes/2026-07-17-1min-ma-cross-cost-dominated.md](research_notes/2026-07-17-1min-ma-cross-cost-dominated.md) | rejected | 天真 1min ma_cross 被成本吃光(-81.8%/6週) |
 | [research_notes/2026-07-18-qqq-slippage-near-zero.md](research_notes/2026-07-18-qqq-slippage-near-zero.md) | adopted | 實測 QQQ 小額市價單滑價 ~0 bps(19/19 成交) |
-| [research_notes/2026-07-18-gap-tradingview-ux.md](research_notes/2026-07-18-gap-tradingview-ux.md) | idea | 對照 TradingView 的人性化缺口(K 線進出點圖等) |
+| [research_notes/2026-07-18-gap-tradingview-ux.md](research_notes/2026-07-18-gap-tradingview-ux.md) | adopted | TradingView UX:K 線進出點、出處行、quant watch 落地;multi-timeframe 事前緩議 |
 | [research_notes/2026-07-18-gap-report-metrics.md](research_notes/2026-07-18-gap-report-metrics.md) | adopted | 報告指標補完:benchmark 疊圖、rolling Sharpe、turnover、PSR 全落地 |
 | [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | adopted | AI 友善介面三部曲:--json / status 快照 / 唯讀 MCP,全部完成 |
 | [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | rejected | FOMC 盲點量化後不成立:暴露 -27bps/yr 噪音級、blackout 6.5 年綁一次 |
@@ -134,7 +134,7 @@ quant info                              # 確認設定與已註冊策略
 
 > 沒啟用 venv 時的等效寫法:`& .\.venv\Scripts\python.exe -m quant.cli <指令>`
 
-### 1. 指令總表(26 個)
+### 1. 指令總表(27 個)
 
 **研究:**
 
@@ -174,14 +174,15 @@ quant info                              # 確認設定與已註冊策略
 | `quant drift` | 回測預期 vs 實盤實際的決策偏差 |
 | `quant integrity` | point-in-time 檢查:歷史是否被資料源回溯改寫 |
 | `quant report` | 每日營運報告(`--alert` 推播 Telegram) |
+| `quant watch` | **一次性條件告警**:`--above/--below/--cross-ma` 擇一,觸發時 `--alert` 推 Telegram(無狀態,節奏自訂) |
 | `quant alert-test` | 測試告警管線(驗證 Telegram 設定) |
 | `quant web` | **啟動網頁儀表盤** |
 
 共用選項:`--strategy`、`--params "k=v,k=v"`、`--start YYYY-MM-DD`、`--timeframe 1d`。
 
-**機器可讀輸出 `--json`**(給腳本 / AI agent 用,16 個查詢類指令支援):
+**機器可讀輸出 `--json`**(給腳本 / AI agent 用,17 個查詢類指令支援):
 `status`、`info`、`account`、`backtest`、`walkforward`、`check`、`experiments`、`lifecycle`、
-`note list`、`live`、`journal`、`oms`、`tca`、`health`、`reconcile`、`drift`。
+`note list`、`live`、`journal`、`oms`、`tca`、`health`、`reconcile`、`drift`、`watch`。
 契約:**stdout 只有一份 JSON 文件**(日誌走 stderr,可安心 `| jq`);頂層鍵 `command` + `data`
 (有過/不過語意的指令再加 `ok`,exit code 不變);數字保持數字(不會變字串);純 ASCII(cp950 安全)。
 例:`quant tca --json` 直接取 `data.avg_slippage_bps`,不必解析人類表格。

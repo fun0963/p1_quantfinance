@@ -1158,6 +1158,68 @@ def alert_test() -> None:
 
 
 @app.command()
+def watch(
+    symbol: str,
+    above: float = typer.Option(0, help="trigger when close >= this level"),
+    below: float = typer.Option(0, help="trigger when close <= this level"),
+    cross_ma: int = typer.Option(0, "--cross-ma",
+                                 help="trigger when close CROSSED its N-bar MA on the latest bar"),
+    timeframe: str = typer.Option("1d"),
+    start: str = typer.Option("2023-01-01", help="history start (enough bars for the MA)"),
+    alert: bool = typer.Option(False, "--alert", help="also push via the notifier when triggered"),
+    as_json: bool = typer.Option(False, "--json", help=_JSON_HELP),
+) -> None:
+    """One-shot market-condition check (TradingView-style alert, non-resident).
+
+    Evaluates exactly ONE condition on the latest bar, reports it, and with
+    --alert pushes a notification when triggered. Stateless by design - run it
+    on whatever cadence you like; --cross-ma compares the last TWO bars, so a
+    once-per-bar run catches each cross exactly once.
+    """
+    from quant.ops.notify import get_notifier
+
+    chosen = [(k, v) for k, v in (("above", above), ("below", below),
+                                  ("cross-ma", cross_ma)) if v]
+    if len(chosen) != 1:
+        raise typer.BadParameter("give exactly one of --above / --below / --cross-ma")
+    kind, arg = chosen[0]
+
+    data = _load(symbol, start, timeframe)
+    close = data["close"].astype(float)
+    last = float(close.iloc[-1])
+    if kind == "above":
+        triggered = last >= float(arg)
+        detail = f"close {last:.2f} vs level {float(arg):.2f}"
+    elif kind == "below":
+        triggered = last <= float(arg)
+        detail = f"close {last:.2f} vs level {float(arg):.2f}"
+    else:
+        n = int(arg)
+        if len(close) < n + 2:
+            raise typer.BadParameter(f"need at least {n + 2} bars for --cross-ma {n}")
+        ma = close.rolling(n).mean()
+        prev_d = float(close.iloc[-2] - ma.iloc[-2])
+        last_d = float(last - ma.iloc[-1])
+        crossed_up = prev_d <= 0 < last_d
+        crossed_dn = prev_d >= 0 > last_d
+        triggered = bool(crossed_up or crossed_dn)
+        direction = "up" if crossed_up else ("down" if crossed_dn else "none")
+        detail = (f"close {last:.2f} vs MA{n} {float(ma.iloc[-1]):.2f} "
+                  f"(diff {prev_d:+.2f} -> {last_d:+.2f}, cross {direction})")
+
+    msg = f"{symbol} {timeframe} {kind} {arg:g}: {detail}"
+    if as_json:
+        _emit_json("watch", {"symbol": symbol, "timeframe": timeframe,
+                             "condition": kind, "arg": arg,
+                             "bar_ts": data.index[-1], "close": last,
+                             "triggered": triggered, "detail": detail})
+    else:
+        typer.echo(f"[WATCH] {'TRIGGERED' if triggered else 'no trigger'} - {msg}")
+    if alert and triggered:
+        get_notifier().warn("Watch alert", msg)
+
+
+@app.command()
 def oms(
     broker: str = typer.Option("alpaca", help="alpaca | paper (only needed with --sync)"),
     sync: bool = typer.Option(False, "--sync", help="poll the broker and advance order states first"),

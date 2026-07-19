@@ -486,3 +486,56 @@ def test_status_human_offline_smoke(monkeypatch, tmp_path):
     r = runner.invoke(cli.app, ["status", "--offline"])
     assert r.exit_code == 0, r.output
     assert "overall   : ok" in r.output and "spy_momentum" in r.output
+
+
+# --- quant watch (one-shot condition alert) ----------------------------------
+def _flat_then_jump(n=40, base=100.0, jump=None):
+    idx = pd.date_range("2024-01-01", periods=n, freq="B", tz="UTC")
+    close = pd.Series(base, index=idx)
+    if jump is not None:
+        close.iloc[-1] = jump
+    return pd.DataFrame({"open": close, "high": close, "low": close,
+                         "close": close, "volume": 1e6}, index=idx)
+
+
+def test_watch_cross_ma_triggers_on_cross(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump(jump=200.0))
+    r = runner.invoke(cli.app, ["watch", "SPY", "--cross-ma", "5", "--json"])
+    assert r.exit_code == 0, r.output
+    d = _json_doc(r)["data"]
+    assert d["triggered"] is True and "cross up" in d["detail"]
+
+
+def test_watch_cross_ma_quiet_when_flat(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump())
+    r = runner.invoke(cli.app, ["watch", "SPY", "--cross-ma", "5", "--json"])
+    assert _json_doc(r)["data"]["triggered"] is False
+
+
+def test_watch_level_and_validation(monkeypatch):
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump())
+    r = runner.invoke(cli.app, ["watch", "SPY", "--above", "50", "--json"])
+    assert _json_doc(r)["data"]["triggered"] is True          # close 100 >= 50
+    r2 = runner.invoke(cli.app, ["watch", "SPY", "--below", "50", "--json"])
+    assert _json_doc(r2)["data"]["triggered"] is False
+    r3 = runner.invoke(cli.app, ["watch", "SPY"])              # no condition
+    assert r3.exit_code != 0
+    r4 = runner.invoke(cli.app, ["watch", "SPY", "--above", "50", "--cross-ma", "5"])
+    assert r4.exit_code != 0                                   # two conditions
+
+
+def test_watch_alert_fires_only_when_triggered(monkeypatch):
+    import quant.ops.notify as notify
+    sent = []
+
+    class _N:
+        def warn(self, title, msg):
+            sent.append((title, msg))
+            return True
+
+    monkeypatch.setattr(notify, "get_notifier", lambda: _N())
+    monkeypatch.setattr(cli, "_load", lambda *a, **k: _flat_then_jump())
+    runner.invoke(cli.app, ["watch", "SPY", "--above", "50", "--alert"])
+    assert len(sent) == 1 and "SPY" in sent[0][1]
+    runner.invoke(cli.app, ["watch", "SPY", "--below", "50", "--alert"])
+    assert len(sent) == 1                                      # not triggered -> no push

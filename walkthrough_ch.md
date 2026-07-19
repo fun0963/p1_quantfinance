@@ -104,6 +104,7 @@
 | 7.3 | 決策軌跡 | `quant journal --live` | 每個交易日都有記錄(冪等設計,漏跑一天也安全,但要知道) |
 | 7.4 | 儀表盤總覽 | `quant web` → http://127.0.0.1:8000 | Backtest/Portfolio/Journal 分頁核對數據 |
 | 7.5 | 告警通道 | `quant alert-test`(設定後跑一次) | Telegram 有收到;CRITICAL 要能吵醒你 |
+| 7.6 | 條件哨兵(可選) | `quant watch SPY --cross-ma 100 --alert` | 一次性檢查:距動量翻轉多遠、跨越了就推播(無狀態,節奏自訂) |
 
 **自動化提示**:查詢類指令都支援 `--json`(stdout 只有一份 JSON、日誌走 stderr、exit code 不變)——寫腳本或讓 AI 代查時用它,別解析人類表格。AI agent 也可走**唯讀 MCP**(`.mcp.json` 已提交,Claude Code 自動偵測;只有查詢、永無下單)。
 
