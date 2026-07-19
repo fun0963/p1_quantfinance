@@ -44,7 +44,7 @@ p1_quantfinance/
 ### 研究筆記清單(完整路徑)
 
 檔名規則 `research_notes/YYYY-MM-DD-<短slug>.md`(slug 上限 40 字元,完整標題在檔內 frontmatter);
-即時清單以 `quant note list` 為準。截至 2026-07-18:
+即時清單以 `quant note list` 為準。截至 2026-07-19:
 
 | 完整路徑 | 狀態 | 一句話 |
 |---------|------|--------|
@@ -59,6 +59,7 @@ p1_quantfinance/
 | [research_notes/2026-07-18-gap-ai-interface.md](research_notes/2026-07-18-gap-ai-interface.md) | adopted | AI 友善介面三部曲:--json / status 快照 / 唯讀 MCP,全部完成 |
 | [research_notes/2026-07-18-gap-event-calendar.md](research_notes/2026-07-18-gap-event-calendar.md) | rejected | FOMC 盲點量化後不成立:暴露 -27bps/yr 噪音級、blackout 6.5 年綁一次 |
 | [research_notes/2026-07-18-alpaca-moc-opg-orders.md](research_notes/2026-07-18-alpaca-moc-opg-orders.md) | rejected | MOC/OPG 對齊暫緩:實測隔夜價差均值≈0(SPY),是噪音不是偏差 |
+| [research_notes/2026-07-19-gap-scan-24h-ai-trader-article-555-pdf.md](research_notes/2026-07-19-gap-scan-24h-ai-trader-article-555-pdf.md) | adopted | 外部「24h AI 交易員」架構比對:無系統性缺口;產出=斷路器通電(max_daily_loss=1000)+ watch --volume-spike |
 
 ### 各資料夾細節(由下層往上層)
 

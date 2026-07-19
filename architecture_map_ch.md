@@ -12,7 +12,7 @@
 | 指標 | 數值 |
 |---|---|
 | 原始碼 | 70 個 `.py`、約 7,500 LOC(`src/quant/` + `config/`) |
-| 測試 | 39 個測試檔、**288 passed / 1 skipped**;ruff + mypy 全綠 |
+| 測試 | 39 個測試檔、**289 passed / 1 skipped**;ruff + mypy 全綠 |
 | Python | 3.11+(開發環境 3.13);`src/` layout,套件名 `quant` |
 | 進入點 | `quant` CLI(typer,27 指令 + `note new/list` 子指令)+ FastAPI 唯讀儀表盤 |
 | 架構評分 | 分層/耦合 **8/10**、測試/CI **8/10**、可維護性 **7/10**(已修正,見 §7) |
