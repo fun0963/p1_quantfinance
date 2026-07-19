@@ -62,7 +62,7 @@
 
 | # | 動作 | 指令 / 位置 | 看什麼、過關標準 |
 |---|------|------------|----------------|
-| 4.1 | 寫 spec(params/風控/生命週期一次進版控) | 編輯 `configs/strategies.json` | `risk` 上限合理(部位名目 × fraction 要過得了自己的 cap!);`lifecycle` 的退場門檻**現在**寫死(rolling Sharpe 下限、回撤下限、最低活動度) |
+| 4.1 | 寫 spec(params/風控/生命週期一次進版控) | 編輯 `configs/strategies.json` | `risk` 上限合理(部位名目 × fraction 要過得了自己的 cap!);設 `max_daily_loss` 當日虧損斷路器(**帳戶級**語意:帳戶當日虧損達此值即停止加新倉、減倉照常;現行三 spec 均 1000 ≈ 權益 1%);`lifecycle` 的退場門檻**現在**寫死(rolling Sharpe 下限、回撤下限、最低活動度) |
 | 4.2 | 驗 spec 正確 | `quant backtest --spec 我的spec --no-log` | 跑出來的參數與你想的一致 |
 | 4.3 | 健康基線 | `quant lifecycle 我的spec` | HOLD;現在的視窗數字就是日後比較的基線 |
 | 4.4 | 進版控 | `git add configs/ && git commit` | spec 是 reviewed diff,不是 shell 歷史 |

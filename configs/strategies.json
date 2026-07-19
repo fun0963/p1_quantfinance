@@ -5,7 +5,7 @@
     "params": {"lookback": 100},
     "timeframe": "1d",
     "start": "2020-01-01",
-    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000},
+    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000, "max_daily_loss": 1000},
     "lifecycle": {
       "state": "paper",
       "eval_bars": 252,
@@ -20,7 +20,7 @@
     "params": {"fast": 5, "slow": 20},
     "timeframe": "1min",
     "start": "2026-06-01",
-    "risk": {"max_position_notional": 3000},
+    "risk": {"max_position_notional": 3000, "max_daily_loss": 1000},
     "lifecycle": {
       "state": "testing",
       "eval_bars": 1950,
@@ -35,7 +35,7 @@
     "params": {"fast": 20, "slow": 50},
     "timeframe": "1d",
     "start": "2020-01-01",
-    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000},
+    "risk": {"stop_loss": 0.05, "take_profit": 0.15, "max_position_notional": 50000, "max_daily_loss": 1000},
     "lifecycle": {
       "state": "research",
       "eval_bars": 252,
