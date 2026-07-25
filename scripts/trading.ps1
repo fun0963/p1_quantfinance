@@ -77,15 +77,28 @@ switch ($Action) {
             $out = Join-Path $LogDir ("schedule_{0}_{1}.log" -f $j.Name, $stamp)
             # cmd /c merges stdout+stderr into ONE log (loguru operational lines go
             # to stderr; a split .err.log hides the interesting half).
-            $inner = "`"$PY`" {0} >> `"$out`" 2>&1" -f $j.Args
-            $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/d /s /c `"$inner`"" `
-                    -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+            # set PYTHONPATH inline (no space before &&): the WMI-spawned process
+            # does NOT inherit this script's environment, unlike Start-Process.
+            $inner = "set PYTHONPATH=src&& `"$PY`" {0} >> `"$out`" 2>&1" -f $j.Args
+            # Spawn via WMI, NOT Start-Process: a process started by Start-Process
+            # joins the caller's Windows Job Object, so schedulers launched from an
+            # AI-assistant tool shell silently die when that session's process tree
+            # is cleaned up (observed twice: clean logs, no crash, no reboot).
+            # Win32_Process.Create is performed by the WMI provider host, outside
+            # any caller job - the scheduler survives whoever launched it.
+            $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+            $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+                CommandLine               = "cmd.exe /d /s /c `"$inner`""
+                CurrentDirectory          = "$RepoRoot"
+                ProcessStartupInformation = $startup
+            }
             Start-Sleep -Seconds 3
-            if ($p.HasExited) {
-                Write-Host ("FAIL  {0}: exited immediately (code {1}) - see {2}" -f $j.Name, $p.ExitCode, $out)
+            $alive = if ($res.ReturnValue -eq 0) { Get-Process -Id $res.ProcessId -ErrorAction SilentlyContinue } else { $null }
+            if ($null -eq $alive) {
+                Write-Host ("FAIL  {0}: spawn rv={1} or exited immediately - see {2}" -f $j.Name, $res.ReturnValue, $out)
                 $failed++
             } else {
-                Write-Host ("OK    {0}: PID {1}  log {2}" -f $j.Name, $p.Id, $out)
+                Write-Host ("OK    {0}: PID {1}  log {2}" -f $j.Name, $res.ProcessId, $out)
                 $started++
             }
         }
