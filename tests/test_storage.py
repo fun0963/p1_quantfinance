@@ -45,7 +45,7 @@ def test_overwrite_backs_up_previous_generation(tmp_path):
     store.save("SPY", "1d", _bars(10))
     store.save("SPY", "1d", _bars(20))  # overwrite with a different frame
 
-    bak = tmp_path / "bars" / "SPY_1d.parquet.bak"
+    bak = tmp_path / "bars" / "us" / "SPY_1d.parquet.bak"
     assert bak.exists()                            # previous generation preserved
     assert len(pd.read_parquet(bak)) == 10         # holds the pre-overwrite data
     assert len(store.load("SPY", "1d")) == 20       # live file holds the new data
@@ -54,7 +54,7 @@ def test_overwrite_backs_up_previous_generation(tmp_path):
 def test_first_save_leaves_no_backup_or_temp(tmp_path):
     store = ParquetStore(base_dir=tmp_path)
     store.save("SPY", "1d", _bars())
-    bars_dir = tmp_path / "bars"
+    bars_dir = tmp_path / "bars" / "us"
     assert not (bars_dir / "SPY_1d.parquet.bak").exists()
     assert not (bars_dir / "SPY_1d.parquet.tmp").exists()
 
@@ -70,9 +70,22 @@ def test_failed_write_preserves_original_and_cleans_temp(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         store.save("SPY", "1d", _bars(20))
 
-    bars_dir = tmp_path / "bars"
+    bars_dir = tmp_path / "bars" / "us"
     assert not (bars_dir / "SPY_1d.parquet.tmp").exists()  # temp cleaned up
     assert len(store.load("SPY", "1d")) == 10               # original intact
+
+
+def test_market_namespace_isolates_caches(tmp_path):
+    """Bars live under <base>/bars/<market>/ - two markets can hold the same
+    symbol string without ever sharing a file (different calendars/currencies)."""
+    us = ParquetStore(base_dir=tmp_path)               # settings default market: us
+    tw = ParquetStore(base_dir=tmp_path, market="tw")
+    us.save("SPY", "1d", _bars(10))
+    tw.save("SPY", "1d", _bars(20))                    # same key, different market
+    assert us._path("SPY", "1d") != tw._path("SPY", "1d")
+    assert len(us.load("SPY", "1d")) == 10             # untouched by the tw write
+    assert len(tw.load("SPY", "1d")) == 20
+    assert (tmp_path / "bars" / "us").is_dir() and (tmp_path / "bars" / "tw").is_dir()
 
 
 def test_get_store_rejects_unknown_backend(monkeypatch):

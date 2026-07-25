@@ -128,7 +128,11 @@ CREATE INDEX IF NOT EXISTS ix_heartbeats_component ON heartbeats(component, id);
 
 class TradeJournal:
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.path = Path(db_path) if db_path else get_settings().data_dir / "journal.db"
+        # Convention: one broker account <-> one journal DB (reconcile compares
+        # exactly one account against exactly one book). JOURNAL_DB in settings
+        # points a second account at its own file; the default stays this one.
+        s = get_settings()
+        self.path = Path(db_path) if db_path else Path(s.journal_db or s.data_dir / "journal.db")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # WAL + a busy timeout so concurrent access (web + CLI + scheduler) doesn't
         # raise "database is locked" and drop an audit record of an order.

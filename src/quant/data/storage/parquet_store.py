@@ -1,7 +1,9 @@
 """Local parquet cache for historical bars.
 
 Keeps research fast and offline-friendly: download once, reload instantly.
-Layout: <data_dir>/bars/<symbol>_<timeframe>.parquet. Swap this class for a
+Layout: <data_dir>/bars/<market>/<symbol>_<timeframe>.parquet — one folder per
+market (default from settings, "us") so bars with different calendars,
+currencies, or adjustment rules can never mix. Swap this class for a
 TimescaleDB-backed one later without changing callers.
 """
 from __future__ import annotations
@@ -17,8 +19,9 @@ from quant.data.storage.base import BarStore
 
 
 class ParquetStore(BarStore):
-    def __init__(self, base_dir: Path | None = None) -> None:
-        self.base = (base_dir or get_settings().data_dir) / "bars"
+    def __init__(self, base_dir: Path | None = None, market: str | None = None) -> None:
+        s = get_settings()
+        self.base = (base_dir or s.data_dir) / "bars" / (market or s.market)
         self.base.mkdir(parents=True, exist_ok=True)
 
     def _path(self, symbol: str, timeframe: str) -> Path:

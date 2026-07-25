@@ -35,7 +35,7 @@ p1_quantfinance/
 ├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
 ├── research_notes/           # ⭐ 研究知識庫:一個想法一頁(假設/做法/結果/結論)
 ├── portfolios/example.json   # 組合設定範例(設定是資料,不是程式)
-├── data/                     # (git 忽略)parquet 快取、journal.db、experiments.db
+├── data/                     # (git 忽略)parquet 快取(bars/us/ 按市場分資料夾)、journal.db(一帳戶一 DB)、experiments.db(全域)
 ├── reports/                  # (git 忽略)回測圖表、tear sheet、CSV
 ├── Dockerfile + docker-compose.yml   # 容器化(含 TimescaleDB)
 └── .github/workflows/ci.yml  # CI:ruff + mypy + pytest(py3.11/3.12)

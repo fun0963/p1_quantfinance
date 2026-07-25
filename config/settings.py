@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     data_dir: Path = ROOT_DIR / "data"
     log_dir: Path = ROOT_DIR / "logs"
 
+    # --- Namespaces (multi-consumer readiness) ---
+    # Market data cache is per-market (<data_dir>/bars/<market>/) so a future
+    # consumer (e.g. TW stocks) can never mix bars with different calendars,
+    # currencies, or adjustment rules into one folder. Operational state is
+    # per-account: one broker account <-> one journal DB (JOURNAL_DB overrides
+    # the default <data_dir>/journal.db). Research artifacts (notes/experiments)
+    # stay global on purpose - one knowledge base, one graveyard.
+    market: str = Field(default="us", alias="MARKET")
+    journal_db: Path | None = Field(default=None, alias="JOURNAL_DB")
+
     # --- Alpaca ---
     alpaca_api_key: str = Field(default="", alias="ALPACA_API_KEY")
     alpaca_secret_key: str = Field(default="", alias="ALPACA_SECRET_KEY")
