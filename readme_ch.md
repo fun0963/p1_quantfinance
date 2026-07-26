@@ -5,7 +5,7 @@
 
 > ⚠️ **安全聲明**:本系統為研究 / 教育用途,非投資建議。下單為 **paper-only**(`ALPACA_PAPER=true` 才能跑)、且**預設 dry-run**(每個會送單的指令都要再加 `--execute` 才會真的下單)。
 
-> 📁 相關文件:[walkthrough_ch.md](walkthrough_ch.md)(**走查規劃表:從發想到檢討一步一步**)、[README.md](README.md)(英文總覽)、[architecture_map_ch.md](architecture_map_ch.md)(**架構地圖,接手必讀**)、[audit_and_roadmap_ch.md](audit_and_roadmap_ch.md)(進度與路線圖)、[docs/GUIDE.md](docs/GUIDE.md)(端到端指南)、[docs/USAGE.md](docs/USAGE.md)(換標的/策略)、[docs/SCHEDULING.md](docs/SCHEDULING.md)(自動排程)、[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)(TimescaleDB/組合/Docker)。
+> 📁 相關文件:[walkthrough_ch.md](walkthrough_ch.md)(**走查規劃表:從發想到檢討一步一步**)、[README.md](README.md)(英文總覽)、[architecture_map_ch.md](architecture_map_ch.md)(**架構地圖,接手必讀**)、[audit_and_roadmap_ch.md](audit_and_roadmap_ch.md)(進度與路線圖)、[docs/GUIDE.md](docs/GUIDE.md)(端到端指南)、[docs/USAGE.md](docs/USAGE.md)(換標的/策略)、[docs/SCHEDULING.md](docs/SCHEDULING.md)(自動排程)、[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)(TimescaleDB/組合/Docker)、[docs/SANDBOX_AGENT_ch.md](docs/SANDBOX_AGENT_ch.md)(**外部研究專案怎麼呼叫本工具組**,如 p3_strategy)。
 
 ---
 
@@ -32,7 +32,8 @@ p1_quantfinance/
 │   └── web/                  # 唯讀網頁儀表盤(FastAPI)
 ├── tests/                    # 39 個測試檔、288 個測試(鏡像 src/)
 ├── scripts/                  # ci.ps1(本機 CI)、trading.cmd/.ps1(一鍵啟停)、daily_live.ps1
-├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT
+├── CLAUDE.md                 # 專案慣例(給 Claude Code:中文 commit、營運鐵律、研究紀律)
+├── docs/                     # GUIDE / USAGE / SCHEDULING / DEPLOYMENT / SANDBOX_AGENT_ch
 ├── research_notes/           # ⭐ 研究知識庫:一個想法一頁(假設/做法/結果/結論)
 ├── portfolios/example.json   # 組合設定範例(設定是資料,不是程式)
 ├── data/                     # (git 忽略)parquet 快取(bars/us/ 按市場分資料夾)、journal.db(一帳戶一 DB)、experiments.db(全域)
