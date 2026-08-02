@@ -36,7 +36,7 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "ipykernel>=6.29",         # notebooks
-    "mcp>=1.2",                # so CI exercises the read-only MCP server tests
+    "mcp>=1.2,<2",             # so CI exercises the read-only MCP server tests
 ]
 timescale = [
     "psycopg[binary]>=3.1",    # TimescaleDB / Postgres driver (optional storage backend)
@@ -46,7 +46,11 @@ web = [
     "uvicorn[standard]>=0.27",  # ASGI server for `quant web`
 ]
 mcp = [
-    "mcp>=1.2",                # read-only MCP server for AI agents (`quant mcp`)
+    # Read-only MCP server for AI agents (`quant mcp`). Capped below 2.0: the
+    # 2.0 SDK dropped the `mcp.server.fastmcp` path our server imports, which
+    # turned CI red on 2026-08-02 without any change on our side. Migrating to
+    # the 2.x API is tracked separately; 1.x keeps working meanwhile.
+    "mcp>=1.2,<2",
 ]
 
 [project.scripts]
