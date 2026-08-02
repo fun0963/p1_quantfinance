@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     market: str = Field(default="us", alias="MARKET")
     journal_db: Path | None = Field(default=None, alias="JOURNAL_DB")
 
+    # --- Single-writer guard (24/7 host) ---
+    # Hostname allowed to route live orders. Two schedulers on one broker account
+    # would double every position, so once trading moves to an always-on host you
+    # set EXECUTE_HOST *on every machine* (the cloud VM's hostname) - the laptop
+    # then refuses --execute while still doing research and dry-runs. Empty (the
+    # default) means unrestricted, so nothing changes until you opt in.
+    execute_host: str = Field(default="", alias="EXECUTE_HOST")
+
     # --- Alpaca ---
     alpaca_api_key: str = Field(default="", alias="ALPACA_API_KEY")
     alpaca_secret_key: str = Field(default="", alias="ALPACA_SECRET_KEY")

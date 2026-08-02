@@ -109,6 +109,30 @@ def _load(symbol: str, start: str, timeframe: str, no_cache: bool = False):
     return fetch_bars(symbol, start, timeframe, use_cache=not no_cache)
 
 
+def _assert_execute_host() -> None:
+    """Refuse live order routing on any machine but the pinned trading host.
+
+    Two schedulers pointing at one broker account double every position. Once
+    trading moves to an always-on host, set EXECUTE_HOST (that host's name) in
+    the .env of EVERY machine: the 24/7 host keeps routing orders, every other
+    machine still researches and dry-runs but can no longer submit. Unset (the
+    default) means unrestricted - nothing changes until you opt in.
+    """
+    import socket
+
+    pinned = get_settings().execute_host.strip()
+    if not pinned:
+        return
+    here = socket.gethostname()
+    if here.strip().lower() != pinned.lower():
+        raise typer.BadParameter(
+            f"--execute is pinned to host '{pinned}' but this machine is '{here}'. "
+            "Refusing: two live schedulers on one account would double every order. "
+            "Drop --execute here (dry-run still works), or clear EXECUTE_HOST if "
+            "trading has moved back to this machine."
+        )
+
+
 def _live_broker(broker: str):
     """Build a broker for the ops commands (alpaca real-paper, or the sim)."""
     if broker == "paper":
@@ -208,6 +232,8 @@ def live(
     """Evaluate the LATEST bar and reconcile the position (signal->risk gate->broker). Dry-run by default."""
     from quant.execution.scheduler import LiveConfig, live_and_journal
 
+    if execute:
+        _assert_execute_host()   # single-writer guard: only the pinned host routes orders
     if spec:
         cfg = _cfg_from_spec(spec, symbol=symbol, broker=broker, mode=mode, fraction=fraction)
     else:
@@ -293,6 +319,8 @@ def schedule(
                            fraction=fraction, max_position_notional=max_position_notional,
                            max_daily_loss=max_daily_loss, stop_loss=stop_loss,
                            take_profit=take_profit)]
+    if execute:
+        _assert_execute_host()   # single-writer guard: only the pinned host routes orders
     label = "EXECUTE" if execute else "DRY-RUN"
     jobs = ", ".join(f"{c.strategy} on {c.symbol}" for c in cfgs)
     cadence = f"every {every} (market hours only)" if every else f"at {at} {days}"

@@ -561,3 +561,44 @@ def test_watch_alert_fires_only_when_triggered(monkeypatch):
     assert len(sent) == 1 and "SPY" in sent[0][1]
     runner.invoke(cli.app, ["watch", "SPY", "--below", "50", "--alert"])
     assert len(sent) == 1                                      # not triggered -> no push
+
+
+# --- EXECUTE_HOST single-writer guard ----------------------------------------
+def _fake_settings(execute_host: str, tmp_path):
+    """Minimal settings stand-in: the CLI callback reads log_level/log_dir too."""
+    return SimpleNamespace(execute_host=execute_host, log_level="INFO", log_dir=tmp_path)
+
+
+def test_execute_host_unset_is_unrestricted(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "get_settings", lambda: _fake_settings("", tmp_path))
+    cli._assert_execute_host()          # must not raise - default behavior unchanged
+
+
+def test_execute_host_allows_the_pinned_machine(monkeypatch, tmp_path):
+    import socket
+
+    monkeypatch.setattr(cli, "get_settings",
+                        lambda: _fake_settings(socket.gethostname().upper(), tmp_path))
+    cli._assert_execute_host()          # case-insensitive match on this host -> allowed
+
+
+def test_execute_host_refuses_other_machines(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "get_settings",
+                        lambda: _fake_settings("some-cloud-vm", tmp_path))
+    with pytest.raises(typer.BadParameter, match="pinned to host"):
+        cli._assert_execute_host()
+
+
+def test_live_execute_blocked_before_touching_the_broker(monkeypatch, tmp_path):
+    """The guard must fire before any broker/journal work - a wrong-host --execute
+    should never reach live_and_journal (that's where orders get placed)."""
+    import quant.execution.scheduler as sched
+
+    called = []
+    monkeypatch.setattr(sched, "live_and_journal", lambda *a, **k: called.append(1))
+    monkeypatch.setattr(cli, "get_settings", lambda: _fake_settings("some-cloud-vm", tmp_path))
+    r = runner.invoke(cli.app, ["live", "SPY", "--execute"])
+    assert r.exit_code != 0
+    assert not called                                  # broker path never entered
+    r2 = runner.invoke(cli.app, ["schedule", "SPY", "--execute"])
+    assert r2.exit_code != 0                           # same guard on the scheduler

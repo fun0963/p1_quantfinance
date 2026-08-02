@@ -1,0 +1,46 @@
+# 24/7 paper-trading stack for an always-on host (e.g. an Oracle Cloud free VM).
+# Full walkthrough: docs/CLOUD_DEPLOY_ch.md
+#
+#   docker compose -f docker-compose.live.yml up -d --build     # start both schedulers
+#   docker compose -f docker-compose.live.yml logs -f spy-momentum
+#   docker compose -f docker-compose.live.yml down              # stop (positions untouched)
+#
+# Two services, not one: --every and --fraction are process-wide flags, so a
+# daily job and a 5-minute job cannot share a scheduler process.
+#
+# SINGLE-WRITER RULE: both containers set hostname `quant-live` and require
+# EXECUTE_HOST=quant-live. Any other machine (your laptop) has a different
+# hostname, so `--execute` there refuses to start - two schedulers on one broker
+# account would double every position. Keep EXECUTE_HOST=quant-live in the
+# laptop's .env too: that is what makes the laptop refuse.
+
+x-live-base: &live-base
+  build:
+    context: .
+    dockerfile: Dockerfile.live
+  hostname: quant-live              # must equal EXECUTE_HOST
+  restart: unless-stopped           # survives crashes AND VM reboots (with docker enabled at boot)
+  env_file: [.env]                  # ALPACA_API_KEY / ALPACA_SECRET_KEY / ALPACA_PAPER / TELEGRAM_*
+  environment:
+    EXECUTE_HOST: quant-live
+    ALPACA_PAPER: ${ALPACA_PAPER:-true}
+  volumes:
+    - ./data:/app/data              # journal.db + experiments.db + bar cache persist here
+    - ./logs:/app/logs
+  logging:                          # cap disk use on a small free-tier volume
+    driver: json-file
+    options: {max-size: "10m", max-file: "5"}
+
+services:
+  # Daily decision at 16:10 ET. --run-now also decides once at container start,
+  # so a restart mid-session re-syncs the position instead of waiting a day.
+  spy-momentum:
+    <<: *live-base
+    command: ["schedule", "--spec", "spy_momentum", "--broker", "alpaca",
+              "--fraction", "0.45", "--run-now", "--execute"]
+
+  # Intraday TCA probe: every 5 minutes while the market is open.
+  qqq-scalp:
+    <<: *live-base
+    command: ["schedule", "--spec", "qqq_scalp_1min", "--broker", "alpaca",
+              "--every", "5min", "--fraction", "0.5", "--execute"]

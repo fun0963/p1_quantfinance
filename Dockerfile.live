@@ -1,0 +1,51 @@
+# Live-only image: the 24/7 scheduler and the read-only ops commands, nothing else.
+#
+# Why a second Dockerfile instead of reusing ./Dockerfile: the research engines
+# (vectorbt -> numba/llvmlite, backtrader) are the heaviest and least ARM-friendly
+# wheels in the project, and the live path never imports them (pinned by
+# tests/test_deploy.py). Dropping them keeps this image small and fast to build
+# on a free-tier ARM VM.
+#
+#   docker compose -f docker-compose.live.yml up -d --build
+#
+# NOT available in this image: `quant backtest` / `sweep` / `walkforward`
+# (they import the engines). Research stays on the workstation - by design.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app \
+    TZ=UTC
+
+WORKDIR /app
+
+# `config/` is a top-level import (not under src/) -> PYTHONPATH=/app above.
+# `configs/` holds the reviewed strategy specs: baked in, not mounted, so the
+# running system is exactly what git says it is (change a spec -> commit -> rebuild).
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY config ./config
+COPY configs ./configs
+
+# Runtime deps, explicitly listed (kept in sync with pyproject by test_deploy.py).
+RUN pip install --upgrade pip && pip install --no-cache-dir \
+      "alpaca-py>=0.21" \
+      "yfinance>=0.2.40" \
+      "pandas>=2.2,<3" \
+      "numpy>=1.26" \
+      "pyarrow>=16" \
+      "pydantic>=2.7" \
+      "pydantic-settings>=2.3" \
+      "python-dotenv>=1.0" \
+      "loguru>=0.7" \
+      "typer>=0.12" \
+      "apscheduler>=3.10" \
+      "pandas-market-calendars>=4.4" \
+      "requests>=2.31" \
+ && pip install --no-cache-dir --no-deps -e .
+
+RUN mkdir -p data logs
+
+ENTRYPOINT ["quant"]
+CMD ["status", "--offline"]
