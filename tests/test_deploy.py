@@ -84,3 +84,14 @@ def test_live_compose_pins_the_single_writer_host():
     # the quoted form used inside command arrays - prose mentions it too.
     assert compose.count('"--execute"') == 2
     assert "spy_momentum" in compose and "qqq_scalp_1min" in compose
+
+
+def test_cloud_scripts_agree_on_the_pinned_hostname():
+    """bootstrap writes the .env template and verify enforces it; if either
+    drifts from the compose hostname the guard silently stops protecting."""
+    bootstrap = (ROOT / "scripts" / "cloud_bootstrap.sh").read_text(encoding="utf-8")
+    verify = (ROOT / "scripts" / "cloud_verify.sh").read_text(encoding="utf-8")
+    assert "EXECUTE_HOST=quant-live" in bootstrap        # template pre-fills it
+    assert 'EXECUTE_HOST:-}" = "quant-live"' in verify   # verify refuses anything else
+    # The paper-only invariant must be enforced before trading starts.
+    assert 'ALPACA_PAPER:-}" = "true"' in verify

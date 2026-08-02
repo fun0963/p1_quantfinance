@@ -44,88 +44,91 @@ Oracle Cloud 主控台 → Compute → Instances → Create instance:
 
 ---
 
-## 2. 主機初始化
+## 2. 部署(四步,腳本代勞)
+
+**① 環境建置——SSH 進 VM 後貼這一行**
 
 ```bash
-ssh ubuntu@<VM_IP>
-
-# Docker + compose plugin
-sudo apt update && sudo apt install -y docker.io docker-compose-v2 git
-sudo usermod -aG docker $USER && newgrp docker
-sudo systemctl enable --now docker        # 開機自動啟動 → 容器 restart 政策才有意義
-
-# 只有 1GB RAM 的 AMD micro 才需要:加 2GB swap
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+curl -fsSL https://raw.githubusercontent.com/fun0963/p1_quantfinance/main/scripts/cloud_bootstrap.sh | bash
 ```
 
----
+它會裝 docker+compose、**設定開機自啟**(容器的 restart 政策才有意義)、記憶體
+不足 2GB 時自動加 swap、clone 專案、產生 `.env` 範本(權限 600)。可重複執行,
+既有 `.env` 絕不覆蓋。跑完若提示加入 docker 群組,先 `newgrp docker` 或重新登入。
 
-## 3. 部署
+**② 填金鑰**(只有你能做,我不經手)
 
 ```bash
-git clone https://github.com/fun0963/p1_quantfinance.git
-cd p1_quantfinance
+nano ~/p1_quantfinance/.env      # 填 ALPACA_API_KEY / ALPACA_SECRET_KEY
 ```
 
-> 私有 repo 的話用 `gh auth login` 或部署金鑰;公開 repo 直接 clone。
+Telegram 兩欄建議一併填——**那是系統壞掉時唯一會通知你的管道**。
+`EXECUTE_HOST=quant-live` 已預填,不要改(要改就得連 compose 的 hostname 一起改)。
 
-**建立 `.env`(手動貼上,永不進 git)**:
-
-```bash
-cat > .env <<'EOF'
-ALPACA_API_KEY=你的paper金鑰
-ALPACA_SECRET_KEY=你的paper密鑰
-ALPACA_PAPER=true
-EXECUTE_HOST=quant-live
-TELEGRAM_BOT_TOKEN=你的token
-TELEGRAM_CHAT_ID=你的chat_id
-ALERTS_ENABLED=true
-EOF
-chmod 600 .env
-```
-
-**把本機歷史帶過去**(保留 TCA 樣本與實驗紀錄;在**本機**執行):
+**③ 把本機歷史帶過去**(可選,保留 TCA 樣本與實驗紀錄;在**本機** PowerShell 執行)
 
 ```powershell
 scp -r D:\AI_work_claude\p1_quantfinance\data ubuntu@<VM_IP>:~/p1_quantfinance/
 ```
 
-**啟動**:
+**④ 啟動並驗收——在 VM 上貼這一行**
 
 ```bash
-docker compose -f docker-compose.live.yml up -d --build   # ARM 首次 build 約 5-10 分鐘
-docker compose -f docker-compose.live.yml ps
-docker compose -f docker-compose.live.yml logs -f spy-momentum
+cd ~/p1_quantfinance && ./scripts/cloud_verify.sh
 ```
 
-看到 `scheduler up: 1 job(s) ...` 就成功。`--run-now` 會立刻做一次決策(非交易日會顯示 skip)。
+它會 build+啟動,然後**逐項驗證**:`.env` 完整性(含 `ALPACA_PAPER=true` 把關)、
+兩個排程器都在跑、券商連得上且確實是 paper 帳戶、**單寫者閘真的會拒絕外來主機**
+(這項是實測不是宣稱)、告警通道通,最後印一份系統快照。任一項失敗即中止——
+半驗證的交易主機比沒有更危險。
+
+> 首次 build 在 ARM 上約 5-10 分鐘。看到 `VERIFIED` 就完成了。
 
 ---
 
-## 4. 驗收(當場做完)
+## 3. 最後一步:讓筆電交出下單權
 
-```bash
-# 1. 帳戶連得上、是 paper
-docker compose -f docker-compose.live.yml run --rm spy-momentum account --json
+雲端跑起來後,**在本機的 `.env` 加這一行**:
 
-# 2. 心跳與對帳
-docker compose -f docker-compose.live.yml run --rm spy-momentum status
-
-# 3. 單寫者閘確實生效(應該拒絕並顯示 pinned to host)
-docker compose -f docker-compose.live.yml run --rm -e EXECUTE_HOST=someone-else \
-  spy-momentum live SPY --execute
-
-# 4. 告警通道
-docker compose -f docker-compose.live.yml run --rm spy-momentum alert-test
+```
+EXECUTE_HOST=quant-live
 ```
 
-**然後在本機**把 `EXECUTE_HOST=quant-live` 加進 `.env`,並確認筆電已無法下單:
+然後確認筆電確實已無法下單:
 
 ```powershell
 quant live SPY --execute      # 應該被拒:pinned to host 'quant-live'
 ```
+
+本機的研究、回測、`--json` 查詢、dry-run 全部不受影響——只是不能再送出訂單。
+**這一步不做,就存在兩台機器同時下單、部位加倍的風險。**
+
+<details>
+<summary>手動路徑(腳本失敗時展開)</summary>
+
+```bash
+# 環境
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER && newgrp docker
+
+# 1GB 機器才需要 swap
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 專案 + .env(填入金鑰)+ 啟動
+git clone https://github.com/fun0963/p1_quantfinance.git && cd p1_quantfinance
+cp .env.example .env && chmod 600 .env && nano .env
+docker compose -f docker-compose.live.yml up -d --build
+
+# 逐項驗收
+docker compose -f docker-compose.live.yml run --rm spy-momentum account --json
+docker compose -f docker-compose.live.yml run --rm -e EXECUTE_HOST=x spy-momentum live SPY --execute  # 必須被拒
+docker compose -f docker-compose.live.yml run --rm spy-momentum alert-test
+docker compose -f docker-compose.live.yml run --rm spy-momentum status
+```
+</details>
 
 ---
 
